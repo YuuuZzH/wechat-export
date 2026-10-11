@@ -50,6 +50,13 @@ def backup_run():
     start_date = data.get('start_date') or None
     end_date = data.get('end_date') or None
     days = data.get('days')
+    # Default ON: reuse unchanged DBs/media from last backup
+    incremental = data.get('incremental', True)
+    if isinstance(incremental, str):
+        incremental = incremental.strip().lower() not in ('0', 'false', 'no', 'off')
+    link_dest = data.get('link_dest') or None
+    if link_dest:
+        link_dest = _safe_path(link_dest)
     if not start_date and not end_date and days is not None:
         if int(days) == 0:
             start_date = None
@@ -94,9 +101,13 @@ def backup_run():
             push(stage, detail, progress)
 
         try:
-            result = run_backup(db_dir, output_dir, key_file,
-                                start_date=start_date, end_date=end_date,
-                                on_progress=_progress)
+            result = run_backup(
+                db_dir, output_dir, key_file,
+                start_date=start_date, end_date=end_date,
+                link_dest=link_dest,
+                incremental=bool(incremental),
+                on_progress=_progress,
+            )
             if result.get('success'):
                 if os.path.isdir(os.path.join(output_dir, 'message')):
                     set_backup_data_dir(output_dir, wxid=result.get('wxid', ''))
@@ -299,13 +310,16 @@ def backup_decrypt():
             def _on_progress(detail, progress):
                 push('decrypt', detail, progress)
 
-            results, skipped_keys = decrypt_for_backup(db_dir, output_dir, keys, on_progress=_on_progress)
+            results, skipped_keys, dec_stats = decrypt_for_backup(
+                db_dir, output_dir, keys, on_progress=_on_progress)
             if results and os.path.isdir(os.path.join(output_dir, 'message')):
                 set_backup_data_dir(output_dir)
                 with flask_app.app_context():
                     flask_app.config['DECRYPTED_DIR'] = output_dir
             push.done({'decrypted': len(results), 'files': results,
-                        'skipped_missing_key': skipped_keys})
+                        'skipped_missing_key': skipped_keys,
+                        'db_reused': dec_stats.get('reused', 0),
+                        'db_fresh': dec_stats.get('decrypted', 0)})
         except Exception as e:
             push.error(str(e))
 

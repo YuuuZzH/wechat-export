@@ -1,6 +1,8 @@
 # Secrets & local data
 .wechat_exp_config.json
-**/backup/
+# Backup *output* dirs only — keep src/backup/ (pipeline source) tracked
+/backup/
+/dist/backup/
 **/export/
 **/output/
 dist/

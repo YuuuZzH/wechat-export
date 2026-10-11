@@ -3,7 +3,7 @@
 {% block content %}
 <a href="/" class="back-link">← 返回仪表盘</a>
 <h2 style="margin:0 0 4px 0">📦 一键备份</h2>
-<p style="color:#8fb9a6;font-size:12px;margin:0 0 20px 0">扫描 → 解密 → 迁移媒体 → 构建索引</p>
+<p style="color:var(--px-muted);font-size:12px;margin:0 0 20px 0">扫描 → 解密 → 迁移媒体 → 构建索引 · 默认增量：未变更的库与媒体直接复用上次备份</p>
 
 <div class="steps-bar" id="steps-bar">
   <span class="step-item active" data-stage="scan"><span>①</span> 扫描账号</span>
@@ -25,7 +25,7 @@
     <div style="flex:1"><label>起始日期</label><input type="date" id="cfg-date-from"></div>
     <div style="flex:1"><label>截止日期</label><input type="date" id="cfg-date-to"></div>
     <div style="flex:1"><label>快速选择</label>
-      <select id="cfg-days" style="width:100%;padding:8px 10px;border:1px solid #2f6b54;border-radius:0;background:#0a1612;color:#e8f7ee;font-size:13px">
+      <select id="cfg-days" style="width:100%;padding:8px 10px;border:2px solid var(--px-border);border-radius:var(--radius-sm);background:var(--px-input-bg);color:var(--px-text);font-size:13px">
         <option value="30" selected>最近 30 天</option>
         <option value="7">最近 7 天</option>
         <option value="90">最近 90 天</option>
@@ -34,6 +34,10 @@
       </select>
     </div>
   </div>
+  <label class="check-row" style="margin-top:10px">
+    <input type="checkbox" id="cfg-incremental" checked>
+    <span>增量备份（复用上次未变更的数据库与媒体，更快）</span>
+  </label>
   <div style="margin-top:8px">
     <button id="btn-detect" class="btn btn-secondary" style="font-size:11px">自动检测微信目录</button>
     <button id="btn-deep" class="btn btn-secondary" style="font-size:11px">🔍 深度搜索</button>
@@ -76,6 +80,7 @@ const page = new WizardPage({
     const body = {
       db_dir: document.getElementById('cfg-db-dir').value,
       output_dir: document.getElementById('cfg-output').value,
+      incremental: document.getElementById('cfg-incremental').checked,
     };
     if (dateFrom || dateTo) {
       if (dateFrom) body.start_date = dateFrom;
@@ -99,9 +104,19 @@ page.showResult = function(result) {
     titleEl.style.color = hasErrors ? '#ff5a6e' : '';
   }
   let html = '<dl class="result-stats">';
-  if (stats.decrypted !== undefined) html += '<dt>解密数据库</dt><dd>' + stats.decrypted + ' 个</dd>';
+  if (stats.decrypted !== undefined) {
+    html += '<dt>数据库</dt><dd>' + stats.decrypted + ' 个';
+    if (stats.db_fresh !== undefined || stats.db_reused !== undefined) {
+      html += '（新解密 ' + (stats.db_fresh || 0) + ' / 复用 ' + (stats.db_reused || 0) + '）';
+    }
+    html += '</dd>';
+  }
+  if (stats.link_dest) html += '<dt>增量基线</dt><dd style="word-break:break-all">' + stats.link_dest + '</dd>';
   if (stats.migrated) {
-    html += '<dt>媒体文件</dt><dd>硬链接 ' + (stats.migrated.hardlinked || 0) + ' | 复制 ' + (stats.migrated.copied || 0) + ' | 跳过 ' + (stats.migrated.skipped || 0) + '</dd>';
+    html += '<dt>媒体文件</dt><dd>硬链接 ' + (stats.migrated.hardlinked || 0)
+      + ' | 复用上次 ' + (stats.migrated.link_reused || 0)
+      + ' | 复制 ' + (stats.migrated.copied || 0)
+      + ' | 跳过 ' + (stats.migrated.skipped || 0) + '</dd>';
   }
   if (stats.indexed) html += '<dt>搜索索引</dt><dd>' + stats.indexed + '</dd>';
   if (hasErrors) {

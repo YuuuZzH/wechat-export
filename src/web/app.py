@@ -233,9 +233,22 @@ def create_app(decrypted_dir: str, wxid: str = None, db_dir: str = None) -> Flas
     # 500（与原先的 NameError 同类），但不会把整个 app 拖垮。
     _search_type_options = _register_blueprint(app, 'routes.search_api', _register_search_bp)
 
-    # JSON error handlers — prevent Flask HTML pages for API routes
+    # Error handlers: JSON for API/XHR, HTML for browser page navigations
     @app.errorhandler(404)
-    def _json_404(e):
+    def _not_found(e):
+        from flask import request
+        wants_html = 'text/html' in (request.accept_mimetypes.best or '')
+        if wants_html and not request.path.startswith('/api'):
+            return (
+                '<!DOCTYPE html><html lang="zh-CN"><meta charset="utf-8">'
+                '<title>未找到</title><body style="font-family:sans-serif;padding:40px">'
+                '<h1>页面不存在</h1><p>路径 <code>'
+                + (request.path or '')
+                + '</code> 无效。请返回 <a href="/">仪表盘</a>，'
+                '或打开 <a href="/docs">使用说明</a>。</p>'
+                '<p style="color:#666">若刚更新过程序，请完全退出后重新启动再试。</p>'
+                '</body></html>'
+            ), 404
         return jsonify({'error': 'not found'}), 404
 
     @app.errorhandler(500)

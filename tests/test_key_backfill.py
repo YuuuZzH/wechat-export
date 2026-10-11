@@ -102,8 +102,8 @@ def test_decrypt_for_backup_backfills_salt_keys(env, monkeypatch, tmp_path):
                         lambda src, dst, key, **kw: True)
     config_file.set_db_keys({REL: KEY_A.hex()}, db_dir=env['acct_a'])
     out = tmp_path / 'out'
-    ok, skipped = decryptor.decrypt_for_backup(env['acct_a'], str(out),
-                                              config_file.get_db_keys())
+    ok, skipped, _stats = decryptor.decrypt_for_backup(
+        env['acct_a'], str(out), config_file.get_db_keys())
     assert skipped == []
     assert config_file.get_db_keys_by_salt() == {SALT_A: KEY_A.hex()}
 
@@ -118,7 +118,7 @@ def test_decrypt_for_backup_uses_salt_keys_when_rel_key_is_other_account(env, mo
     config_file.set_db_keys({REL: KEY_A.hex()}, db_dir=env['acct_a'])
     config_file.set_db_keys({REL: KEY_A.hex()}, db_dir=env['acct_b'],
                             salt_keys={SALT_B: KEY_B.hex()})
-    ok, skipped = decryptor.decrypt_for_backup(env['acct_b'], str(tmp_path / 'out2'),
-                                              config_file.get_db_keys())
+    ok, skipped, _stats = decryptor.decrypt_for_backup(
+        env['acct_b'], str(tmp_path / 'out2'), config_file.get_db_keys())
     assert skipped == [], '有 salt 密钥时不该再跳过'
     assert used and used[0] == KEY_B

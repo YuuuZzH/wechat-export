@@ -141,11 +141,14 @@ def cmd_backup(args):
     harvest = not getattr(args, 'no_harvest', False)
 
     from backup.pipeline import run_backup
+    incremental = not bool(getattr(args, 'full', False))
+    print(f"备份模式: {'增量（复用未变更库/媒体）' if incremental else '全量'}")
     print()
     result = run_backup(
         db_path, output_dir, key_file,
         start_date=start_date, end_date=end_date,
         link_dest=getattr(args, 'link_dest', None),
+        incremental=incremental,
         on_progress=_make_progress_display(),
         harvest_keys=harvest,
     )
@@ -1042,7 +1045,9 @@ def main():
     bp.add_argument('--date-from', help='起始日期 YYYY-MM-DD (覆盖 --days)')
     bp.add_argument('--date-to', help='截止日期 YYYY-MM-DD (覆盖 --days)')
     bp.add_argument('--wxid', help='指定备份的微信账号 (多个账号时必选)')
-    bp.add_argument('--link-dest', help='前一次备份目录，媒体文件优先从该目录硬链接复用')
+    bp.add_argument('--link-dest', help='前一次备份目录；增量模式下未变更的库/媒体优先从此复用')
+    bp.add_argument('--full', action='store_true',
+                    help='强制全量备份（不复用上次备份的数据库与媒体）')
     bp.add_argument('--no-harvest', action='store_true',
                     help='禁用后台 V2 图片密钥收割')
 
