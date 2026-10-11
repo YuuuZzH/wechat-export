@@ -27,12 +27,14 @@ echo [*] PyInstaller packaging (may take a few minutes)...
     --name wechat_exp ^
     --paths "%~dp0src" ^
     --add-data "%~dp0src;src" ^
+    --add-data "%~dp0README.md;." ^
     --add-data "%~dp0tools\silk_decoder.exe;tools" ^
     --hidden-import Crypto.Cipher.AES ^
     --hidden-import Crypto.Util.Padding ^
     --hidden-import flask ^
     --hidden-import werkzeug ^
     --hidden-import jinja2 ^
+    --hidden-import markdown ^
     --hidden-import blackboxprotobuf ^
     --hidden-import zstandard ^
     --hidden-import openpyxl ^
