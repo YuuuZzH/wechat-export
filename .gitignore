@@ -1,0 +1,40 @@
+# Secrets & local data
+.wechat_exp_config.json
+**/backup/
+**/export/
+**/output/
+dist/
+build/
+build_venv/
+*.exe
+!tools/silk_decoder.exe
+
+# Share package binaries (keep templates only)
+share_package/*.exe
+share_package.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.env
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Generated
+file_version.txt
+*.log
+*.tmp

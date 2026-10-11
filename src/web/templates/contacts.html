@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}WeChat Export — 通讯录{% endblock %}
+{% block nav_right %}
+<a href="/" class="nav-link">仪表盘</a>
+<a href="/chat" class="nav-link">聊天查看器</a>
+{% endblock %}
+{% block content %}
+<div id="contacts-app">
+  <aside id="contacts-sidebar">
+    <div class="contacts-search-bar">
+      <input type="text" id="contacts-search" placeholder="搜索姓名、备注、昵称、别名..." autocomplete="off">
+    </div>
+    <div class="contacts-tabs" id="contacts-tabs">
+      <button class="contacts-tab active" data-tab="contacts">联系人</button>
+      <button class="contacts-tab" data-tab="groups">群聊</button>
+    </div>
+    <div class="contacts-filter-bar">
+      <label for="contacts-label-filter">标签</label>
+      <select id="contacts-label-filter" title="按微信标签筛选">
+        <option value="">全部标签</option>
+      </select>
+    </div>
+    <div class="contacts-export-bar">
+      <label for="contacts-export-format">导出当前列表</label>
+      <select id="contacts-export-format" title="选择导出格式">
+        <option value="xlsx">Excel (.xlsx)</option>
+        <option value="csv">CSV (.csv)</option>
+        <option value="html">HTML (.html)</option>
+      </select>
+      <button id="contacts-export-btn" class="btn btn-secondary" title="导出当前标签页、标签筛选与搜索结果">导出</button>
+    </div>
+    <div class="contacts-list" id="contacts-list"></div>
+  </aside>
+  <main id="contacts-detail">
+    <div class="detail-placeholder">
+      <div class="placeholder-icon">&#x1F465;</div>
+      <p>选择左侧联系人查看详情</p>
+    </div>
+  </main>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/component.js') }}"></script>
+<script src="{{ url_for('static', filename='js/address-book-store.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/address-book-list.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/contact-detail.js') }}"></script>
+<script src="{{ url_for('static', filename='js/contacts-app.js') }}"></script>
+{% endblock %}

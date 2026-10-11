@@ -1,0 +1,290 @@
+{% extends "base.html" %}
+{% block title %}导出聊天记录 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 class="page-title"><span class="px-icon px-icon-export" style="display:inline-grid;vertical-align:middle;margin:0 8px 0 0;width:28px;height:28px;box-shadow:2px 2px 0 var(--px-shadow)"></span>导出聊天记录</h2>
+<p class="page-desc" style="margin:0 0 20px 0">
+  勾选群聊/联系人 · 关键词过滤 · 多格式导出（Excel 按时间平铺 / HTML 对话气泡 / TXT / CSV）
+</p>
+
+<div class="config-panel">
+  <!-- 会话选择 -->
+  <div class="export-section">
+    <div class="export-section-head">
+      <label>选择会话</label>
+      <div class="export-kind-tabs">
+        <button type="button" class="kind-btn active" data-kind="all">全部</button>
+        <button type="button" class="kind-btn" data-kind="group">仅群聊</button>
+        <button type="button" class="kind-btn" data-kind="contact">仅私聊</button>
+      </div>
+    </div>
+    <div class="export-search-row">
+      <input id="cfg-chat-q" type="search" placeholder="搜索群名 / 备注 / 微信号…" autocomplete="off">
+      <button type="button" id="btn-refresh-chats" class="btn btn-secondary">刷新列表</button>
+      <button type="button" id="btn-select-visible" class="btn btn-secondary">全选当前</button>
+      <button type="button" id="btn-clear-sel" class="btn btn-secondary">清空</button>
+    </div>
+    <div id="chat-picker" class="chat-picker">
+      <div class="chat-picker-empty">正在加载会话列表…</div>
+    </div>
+    <div id="sel-summary" class="sel-summary">已选 0 个会话</div>
+  </div>
+
+  <!-- 过滤与格式 -->
+  <div class="form-row" style="margin-top:14px;flex-wrap:wrap">
+    <div style="flex:2;min-width:180px">
+      <label>关键词过滤（仅消息正文，不含昵称）</label>
+      <input id="cfg-keyword" placeholder="例如: 会议 报销　或　合同|发票（|为或）">
+    </div>
+    <div style="flex:1;min-width:120px"><label>开始日期</label><input id="cfg-start" type="date"></div>
+    <div style="flex:1;min-width:120px"><label>结束日期</label><input id="cfg-end" type="date"></div>
+    <div style="flex:1.4;min-width:160px">
+      <label>导出格式</label>
+      <select id="cfg-format">
+        <option value="xlsx">Excel（按时间平铺）</option>
+        <option value="html" selected>HTML（对话气泡）</option>
+        <option value="txt">TXT 文本</option>
+        <option value="csv">CSV 表格</option>
+        <option value="session-pack">会话报告包 ZIP（对话+词云+统计）</option>
+        <option value="chatlab-jsonl">ChatLab JSONL（可导入 · 断点续传）</option>
+        <option value="chatlab-json">ChatLab JSON</option>
+      </select>
+    </div>
+    <div><label>&nbsp;</label><button id="btn-run" class="btn btn-primary">开始导出</button></div>
+  </div>
+
+  <label class="check-row"
+         title="多会话时：Excel/CSV/HTML 默认合并为一份；TXT 默认分文件打 zip。取消勾选则始终分文件。">
+    <input type="checkbox" id="cfg-merge" checked>
+    <span>多会话合并为一个文件（Excel/CSV/HTML 推荐；TXT 取消勾选可分文件打包）</span>
+  </label>
+  <label class="check-row"
+         title="只带上已经转写过的语音（只读转写库，不会为了导出而跑识别）">
+    <input type="checkbox" id="cfg-asr">
+    <span>包含语音转文字（如有）</span>
+  </label>
+
+  <p class="page-desc" style="margin:12px 0 0 0;line-height:1.7">
+    <b>关键词</b>：只匹配消息正文（不含发送者昵称）。空格=AND，<code>|</code>=OR。<br>
+    <b>Excel</b>：所有选中会话按时间线平铺，含「会话 / 发送者 / 类型 / 内容」列，己方消息浅橙底。<br>
+    <b>HTML</b>：对话气泡样式，导出文件内可再次页内搜索高亮。<br>
+    <b>会话报告包</b>：每个会话一份 ZIP（chat.html + wordcloud.html + stats.json）。<br>
+    ChatLab 远程拉取请用 <a href="/pull">Pull 数据源</a>；
+    语音留言请用 <a href="/voice-export">语音导出</a>。
+  </p>
+</div>
+
+<div id="progress-container" class="progress-panel" style="display:none">
+  <div class="progress-bar-outer"><div id="progress-bar" class="progress-bar-inner" style="width:0%"></div></div>
+  <div id="progress-detail" class="progress-detail">等待开始...</div>
+  <div id="log-console" class="log-console" style="margin-top:12px"></div>
+</div>
+
+<div id="result-container" class="result-panel" style="display:none">
+  <h3>✓ 导出完成</h3>
+  <div id="result-content"></div>
+</div>
+
+<div id="select-container" class="select-container" style="display:none"></div>
+
+<style>
+.export-section { margin-bottom: 4px; }
+.export-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px; gap: 12px; flex-wrap: wrap;
+}
+.export-section-head > label { margin: 0; color: var(--px-text); font-weight: 600; }
+.export-kind-tabs { display: flex; gap: 6px; }
+.kind-btn {
+  background: #fff; border: 2px solid var(--px-border); color: var(--px-text);
+  border-radius: 0; padding: 4px 12px; font-size: 12px; cursor: pointer;
+  font-family: var(--font-display); box-shadow: 2px 2px 0 var(--px-shadow);
+}
+.kind-btn.active {
+  background: var(--px-pink); border-color: #e04570; color: #fff;
+}
+.export-search-row {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; align-items: center;
+}
+.export-search-row input { flex: 1; min-width: 180px; }
+.chat-picker {
+  max-height: 280px; overflow: auto;
+  background: #fff; border: 2px solid var(--px-border); border-radius: 0;
+  padding: 6px;
+}
+.chat-picker-empty { color: var(--px-muted); font-size: 13px; padding: 24px; text-align: center; }
+.chat-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 0; cursor: pointer;
+  border: 2px solid transparent; margin: 0; font-weight: 400;
+  color: var(--px-text); background: transparent;
+}
+.chat-item:hover { background: #fff0f5; }
+.chat-item.selected { background: #ffe8d6; border-color: var(--px-orange); }
+.chat-item input[type="checkbox"] {
+  width: 16px; height: 16px; min-width: 16px; flex-shrink: 0;
+}
+.chat-item .name { flex: 1; color: var(--px-text); font-size: 14px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-item .badge {
+  font-size: 11px; padding: 1px 7px; border-radius: 0;
+  background: #fff6f0; color: var(--px-muted); flex-shrink: 0;
+  border: 1px solid var(--px-border);
+}
+.chat-item .badge.group { background: #ffe0ef; color: var(--px-pink); border-color: var(--px-pink); }
+.chat-item .count { color: var(--px-muted); font-size: 12px; flex-shrink: 0; min-width: 64px; text-align: right; }
+.sel-summary { color: var(--px-orange); font-size: 13px; margin-top: 8px; font-weight: 600; }
+.select-container {
+  background: var(--px-panel); border: 3px solid var(--px-border); border-radius: 0;
+  padding: 20px; margin-top: 16px; max-width: 600px; box-shadow: 4px 4px 0 var(--px-shadow);
+}
+</style>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/sse_progress.js') }}"></script>
+<script src="{{ url_for('static', filename='js/wizard.js') }}"></script>
+<script>
+(function () {
+  const selected = new Map(); // username -> {username, display_name, is_group}
+  let kind = 'all';
+  let chatsCache = [];
+  let loadTimer = null;
+
+  const picker = document.getElementById('chat-picker');
+  const summary = document.getElementById('sel-summary');
+  const qInput = document.getElementById('cfg-chat-q');
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  function updateSummary() {
+    const n = selected.size;
+    const groups = [...selected.values()].filter(c => c.is_group).length;
+    summary.textContent = n
+      ? ('已选 ' + n + ' 个会话' + (groups ? '（群聊 ' + groups + '）' : ''))
+      : '已选 0 个会话（也可在下方用关键词导出前先勾选）';
+  }
+
+  function render() {
+    if (!chatsCache.length) {
+      picker.innerHTML = '<div class="chat-picker-empty">暂无会话。请先完成「一键备份」。</div>';
+      return;
+    }
+    let html = '';
+    for (const c of chatsCache) {
+      const checked = selected.has(c.username) ? ' checked' : '';
+      const sel = selected.has(c.username) ? ' selected' : '';
+      const badge = c.is_group
+        ? '<span class="badge group">群聊</span>'
+        : '<span class="badge">私聊</span>';
+      html += '<label class="chat-item' + sel + '" data-u="' + esc(c.username) + '">'
+        + '<input type="checkbox"' + checked + '>'
+        + '<span class="name" title="' + esc(c.username) + '">' + esc(c.display_name) + '</span>'
+        + badge
+        + '<span class="count">' + Number(c.msg_count || 0).toLocaleString() + ' 条</span>'
+        + '</label>';
+    }
+    picker.innerHTML = html || '<div class="chat-picker-empty">没有匹配的会话</div>';
+    picker.querySelectorAll('.chat-item').forEach(el => {
+      const cb = el.querySelector('input');
+      const u = el.dataset.u;
+      const info = chatsCache.find(x => x.username === u);
+      const sync = () => {
+        if (cb.checked) selected.set(u, info || { username: u, display_name: u, is_group: false });
+        else selected.delete(u);
+        el.classList.toggle('selected', cb.checked);
+        updateSummary();
+      };
+      cb.addEventListener('change', sync);
+      el.addEventListener('click', (e) => {
+        if (e.target === cb) return;
+        cb.checked = !cb.checked;
+        sync();
+      });
+    });
+  }
+
+  function loadChats() {
+    const q = qInput.value.trim();
+    picker.innerHTML = '<div class="chat-picker-empty">加载中…</div>';
+    const url = '/api/export/chats?kind=' + encodeURIComponent(kind)
+      + (q ? '&q=' + encodeURIComponent(q) : '');
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        chatsCache = (data && data.chats) || [];
+        render();
+      })
+      .catch(err => {
+        picker.innerHTML = '<div class="chat-picker-empty">加载失败：' + esc(err.message) + '</div>';
+      });
+  }
+
+  document.querySelectorAll('.kind-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.kind-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      kind = btn.dataset.kind;
+      loadChats();
+    });
+  });
+
+  qInput.addEventListener('input', () => {
+    clearTimeout(loadTimer);
+    loadTimer = setTimeout(loadChats, 280);
+  });
+  document.getElementById('btn-refresh-chats').addEventListener('click', loadChats);
+  document.getElementById('btn-select-visible').addEventListener('click', () => {
+    for (const c of chatsCache) selected.set(c.username, c);
+    render();
+    updateSummary();
+  });
+  document.getElementById('btn-clear-sel').addEventListener('click', () => {
+    selected.clear();
+    render();
+    updateSummary();
+  });
+
+  updateSummary();
+  loadChats();
+
+  new WizardPage({
+    runBtnId: 'btn-run',
+    apiUrl: '/api/export/chat',
+    steps: ['export'],
+    chatFieldId: 'cfg-contact-fallback',
+    getBody: () => {
+      const contacts = [...selected.keys()];
+      if (!contacts.length) {
+        alert('请先在列表中勾选要导出的群聊/联系人');
+        throw new Error('未选择会话');
+      }
+      return {
+        contacts: contacts,
+        contact: contacts.length === 1 ? contacts[0] : '',
+        keyword: document.getElementById('cfg-keyword').value,
+        date_start: document.getElementById('cfg-start').value,
+        date_end: document.getElementById('cfg-end').value,
+        format: document.getElementById('cfg-format').value,
+        merge: !!(document.getElementById('cfg-merge') && document.getElementById('cfg-merge').checked),
+        include_asr: !!(document.getElementById('cfg-asr') && document.getElementById('cfg-asr').checked),
+      };
+    },
+  });
+
+  // WizardPage.start 在 getBody 抛错时仍会 disable 按钮——拦截一下
+  const runBtn = document.getElementById('btn-run');
+  const _orig = runBtn.onclick;
+  runBtn.addEventListener('click', (e) => {
+    if (!selected.size) {
+      e.stopImmediatePropagation();
+      alert('请先在列表中勾选要导出的群聊/联系人');
+      runBtn.disabled = false;
+    }
+  }, true);
+})();
+</script>
+{% endblock %}

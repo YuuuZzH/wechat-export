@@ -1,0 +1,401 @@
+/* ============================================================
+   WeChat Export — 主题包
+   html[data-theme="..."] 覆盖 :root 变量
+   ============================================================ */
+
+/* ---------- 像素风（默认，与 :root 一致：粉橙硬边像素） ---------- */
+html[data-theme="pixel"] {
+  color-scheme: light;
+  --radius: 0px;
+  --radius-sm: 0px;
+  --radius-avatar: 0px;
+  --border-w: 3px;
+  --nav-border-w: 4px;
+  --elev: 4px 4px 0 var(--px-shadow);
+  --elev-sm: 2px 2px 0 var(--px-shadow);
+  --font-brand: "Press Start 2P", "ZCOOL QingKe HuangYou", monospace;
+  --font-display: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif;
+  --brand-anim: brand-pulse 2.4s steps(2) infinite;
+  --motion-ease: steps(2);
+}
+
+html[data-theme="pixel"] #top-nav .nav-brand {
+  font-size: 11px;
+  text-shadow: 2px 2px 0 var(--px-shadow);
+}
+html[data-theme="pixel"] .dashboard-hero h1 {
+  font-size: 16px;
+  text-shadow: 3px 3px 0 var(--px-shadow);
+}
+html[data-theme="pixel"] .dashboard-section h2::before {
+  content: "▶ ";
+  color: var(--px-pink);
+}
+
+/* ---------- 青春风（清新薄荷绿 / 天蓝） ---------- */
+html[data-theme="youth"] {
+  color-scheme: light;
+  --px-bg: #f3fbf7;
+  --px-bg-2: #e5f6ee;
+  --px-panel: #ffffff;
+  --px-panel-2: #eefaf4;
+  --px-border: #7dd3b0;
+  --px-border-hi: #14b8a6;
+  --px-text: #134e4a;
+  --px-muted: #3f6f68;
+  --px-dim: #6b908a;
+  --px-accent: #14b8a6;
+  --px-accent-hi: #0d9488;
+  --px-gold: #0ea5e9;
+  --px-lime: #14b8a6;
+  --px-cyan: #38bdf8;
+  --px-pink: #2dd4bf;
+  --px-orange: #14b8a6;
+  --px-danger: #ef4444;
+  --px-warn: #f59e0b;
+  --px-ok: #10b981;
+  --px-shadow: #7bc4a8;
+  --px-input-bg: #ffffff;
+  --bubble-me-bg: #ccfbf1;
+  --bubble-me-hover: #99f6e4;
+  --bubble-other-bg: #ffffff;
+  --contact-active-bg: #d1fae5;
+  --font-brand: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif;
+  --font-display: "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif;
+  --font-body: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --radius: 10px;
+  --radius-sm: 8px;
+  --radius-avatar: 12px;
+  --border-w: 2px;
+  --nav-border-w: 3px;
+  --elev: 0 6px 16px rgba(20, 184, 166, 0.18);
+  --elev-sm: 0 2px 8px rgba(20, 184, 166, 0.14);
+  --bg-overlay: radial-gradient(circle at 15% 10%, rgba(56, 189, 248, 0.16), transparent 36%),
+    radial-gradient(circle at 85% 20%, rgba(45, 212, 191, 0.18), transparent 34%),
+    linear-gradient(180deg, #f7fffb, #eefaf5);
+  --bg-scan: none;
+  --bg-tile: radial-gradient(circle at 50% 50%, rgba(20, 184, 166, 0.08) 0 1px, transparent 2px);
+  --bg-tile-size: 20px 20px;
+  --brand-anim: none;
+  --motion-ease: ease;
+}
+
+html[data-theme="youth"] #top-nav .nav-brand {
+  font-size: 18px;
+  font-weight: 700;
+  text-shadow: none;
+}
+html[data-theme="youth"] .nav-brand-mark { animation: none; }
+html[data-theme="youth"] .dashboard-hero h1 {
+  font-size: 26px;
+  text-shadow: none;
+}
+html[data-theme="youth"] .dashboard-section h2::before {
+  content: "◎ ";
+  color: var(--px-gold);
+}
+
+/* ---------- 科技风 ---------- */
+html[data-theme="tech"] {
+  color-scheme: dark;
+  --px-bg: #0b1220;
+  --px-bg-2: #121a2b;
+  --px-panel: #101827;
+  --px-panel-2: #162033;
+  --px-border: #1e3a5f;
+  --px-border-hi: #22d3ee;
+  --px-text: #e6f1ff;
+  --px-muted: #9fb3c8;
+  --px-dim: #6b7c93;
+  --px-accent: #22d3ee;
+  --px-accent-hi: #0891b2;
+  --px-gold: #22d3ee;
+  --px-lime: #67e8f9;
+  --px-cyan: #38bdf8;
+  --px-pink: #818cf8;
+  --px-orange: #22d3ee;
+  --px-danger: #f87171;
+  --px-warn: #fbbf24;
+  --px-ok: #34d399;
+  --px-shadow: #041018;
+  --px-input-bg: #0d1524;
+  --bubble-me-bg: #123047;
+  --bubble-me-hover: #16405c;
+  --bubble-other-bg: #152033;
+  --contact-active-bg: #16324a;
+  --font-brand: "Orbitron", "Noto Sans SC", sans-serif;
+  --font-display: "Rajdhani", "Noto Sans SC", sans-serif;
+  --font-body: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-avatar: 6px;
+  --border-w: 1px;
+  --nav-border-w: 2px;
+  --elev: 0 0 0 1px rgba(34, 211, 238, 0.18), 0 8px 24px rgba(0, 0, 0, 0.45);
+  --elev-sm: 0 0 0 1px rgba(34, 211, 238, 0.12), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --bg-overlay: radial-gradient(ellipse at 20% 0%, rgba(34, 211, 238, 0.12), transparent 50%),
+    radial-gradient(ellipse at 80% 100%, rgba(99, 102, 241, 0.12), transparent 45%),
+    linear-gradient(180deg, #0b1220, #0a101c);
+  --bg-scan: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(34, 211, 238, 0.03) 2px,
+    rgba(34, 211, 238, 0.03) 3px
+  );
+  --bg-tile: linear-gradient(90deg, rgba(34, 211, 238, 0.04) 1px, transparent 1px),
+    linear-gradient(rgba(34, 211, 238, 0.04) 1px, transparent 1px);
+  --bg-tile-size: 32px 32px;
+  --brand-anim: tech-glow 2.8s ease-in-out infinite;
+  --motion-ease: ease;
+}
+
+html[data-theme="tech"] #top-nav .nav-brand {
+  font-size: 13px;
+  letter-spacing: 1px;
+  text-shadow: 0 0 12px rgba(34, 211, 238, 0.55);
+}
+html[data-theme="tech"] .dashboard-hero h1 {
+  font-size: 22px;
+  text-shadow: 0 0 18px rgba(34, 211, 238, 0.45);
+}
+html[data-theme="tech"] .dashboard-section h2::before {
+  content: "// ";
+  color: var(--px-cyan);
+}
+
+@keyframes tech-glow {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(34, 211, 238, 0.35)); }
+  50% { filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.75)); }
+}
+
+/* ---------- 动漫风 ---------- */
+html[data-theme="anime"] {
+  color-scheme: light;
+  --px-bg: #fff7fb;
+  --px-bg-2: #ffe9f4;
+  --px-panel: #ffffff;
+  --px-panel-2: #fff0f8;
+  --px-border: #f9a8d4;
+  --px-border-hi: #ec4899;
+  --px-text: #3b2048;
+  --px-muted: #7a5a86;
+  --px-dim: #a789b2;
+  --px-accent: #a78bfa;
+  --px-accent-hi: #8b5cf6;
+  --px-gold: #f472b6;
+  --px-lime: #c084fc;
+  --px-cyan: #67e8f9;
+  --px-pink: #fb7185;
+  --px-orange: #f472b6;
+  --px-danger: #ef4444;
+  --px-warn: #fbbf24;
+  --px-ok: #34d399;
+  --px-shadow: #f0abcc;
+  --px-input-bg: #fffafd;
+  --bubble-me-bg: #f3e8ff;
+  --bubble-me-hover: #eadcff;
+  --bubble-other-bg: #ffffff;
+  --contact-active-bg: #ffe4f1;
+  --font-brand: "Zen Maru Gothic", "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif;
+  --font-display: "Zen Maru Gothic", "Noto Sans SC", sans-serif;
+  --font-body: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --radius: 16px;
+  --radius-sm: 12px;
+  --radius-avatar: 50%;
+  --border-w: 2px;
+  --nav-border-w: 3px;
+  --elev: 0 10px 24px rgba(244, 114, 182, 0.22);
+  --elev-sm: 0 4px 12px rgba(244, 114, 182, 0.16);
+  --bg-overlay: radial-gradient(circle at 12% 18%, rgba(244, 114, 182, 0.18), transparent 32%),
+    radial-gradient(circle at 88% 12%, rgba(167, 139, 250, 0.16), transparent 30%),
+    radial-gradient(circle at 70% 80%, rgba(103, 232, 249, 0.12), transparent 35%),
+    linear-gradient(180deg, #fff7fb, #fff0f7);
+  --bg-scan: none;
+  --bg-tile: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.55) 0 1px, transparent 2px);
+  --bg-tile-size: 18px 18px;
+  --brand-anim: none;
+  --motion-ease: ease;
+}
+
+html[data-theme="anime"] #top-nav .nav-brand {
+  font-size: 15px;
+  font-weight: 700;
+  text-shadow: none;
+}
+html[data-theme="anime"] .dashboard-hero h1 {
+  font-size: 28px;
+  text-shadow: none;
+}
+html[data-theme="anime"] .dashboard-section h2::before {
+  content: "★ ";
+  color: var(--px-pink);
+}
+html[data-theme="anime"] .nav-brand-mark { animation: none; }
+
+/* ---------- 微信原始风 ---------- */
+html[data-theme="wechat"] {
+  color-scheme: light;
+  --px-bg: #ededed;
+  --px-bg-2: #f7f7f7;
+  --px-panel: #ffffff;
+  --px-panel-2: #f5f5f5;
+  --px-border: #d9d9d9;
+  --px-border-hi: #07c160;
+  --px-text: #191919;
+  --px-muted: #666666;
+  --px-dim: #999999;
+  --px-accent: #07c160;
+  --px-accent-hi: #06ad56;
+  --px-gold: #07c160;
+  --px-lime: #07c160;
+  --px-cyan: #10aeff;
+  --px-pink: #07c160;
+  --px-orange: #07c160;
+  --px-danger: #fa5151;
+  --px-warn: #ffc300;
+  --px-ok: #07c160;
+  --px-shadow: rgba(0, 0, 0, 0.08);
+  --px-input-bg: #ffffff;
+  --bubble-me-bg: #95ec69;
+  --bubble-me-hover: #89d961;
+  --bubble-other-bg: #ffffff;
+  --contact-active-bg: #e9f8ef;
+  --font-brand: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-display: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-avatar: 6px;
+  --border-w: 1px;
+  --nav-border-w: 1px;
+  --elev: 0 1px 4px rgba(0, 0, 0, 0.08);
+  --elev-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --bg-overlay: linear-gradient(180deg, #f5f5f5, #ededed);
+  --bg-scan: none;
+  --bg-tile: none;
+  --bg-tile-size: auto;
+  --brand-anim: none;
+  --motion-ease: ease;
+}
+
+html[data-theme="wechat"] #top-nav {
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+}
+html[data-theme="wechat"] #top-nav .nav-brand {
+  font-size: 16px;
+  font-weight: 700;
+  text-shadow: none;
+  letter-spacing: 0;
+}
+html[data-theme="wechat"] .nav-brand-mark,
+html[data-theme="wechat"] .nav-tagline { color: var(--px-muted); }
+html[data-theme="wechat"] .nav-brand-mark { animation: none; }
+html[data-theme="wechat"] .dashboard-hero h1 {
+  font-size: 24px;
+  text-shadow: none;
+}
+html[data-theme="wechat"] .dashboard-section h2::before {
+  content: "";
+}
+html[data-theme="wechat"] .dashboard-card:hover {
+  transform: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+html[data-theme="wechat"] .msg-row.me .msg-sender { color: #1a7f37; }
+html[data-theme="wechat"] .msg-row.other .msg-sender { color: #576b95; }
+
+/* ---------- QQ 复古风 ---------- */
+html[data-theme="qq"] {
+  color-scheme: light;
+  --px-bg: #dceefc;
+  --px-bg-2: #c5e4fa;
+  --px-panel: #ffffff;
+  --px-panel-2: #eaf5ff;
+  --px-border: #7eb6e8;
+  --px-border-hi: #12b7f5;
+  --px-text: #1a2a3a;
+  --px-muted: #4a6680;
+  --px-dim: #7a93a8;
+  --px-accent: #12b7f5;
+  --px-accent-hi: #0e9fd6;
+  --px-gold: #12b7f5;
+  --px-lime: #5c6bc0;
+  --px-cyan: #00bcd4;
+  --px-pink: #5c6bc0;
+  --px-orange: #12b7f5;
+  --px-danger: #e74c3c;
+  --px-warn: #f39c12;
+  --px-ok: #27ae60;
+  --px-shadow: #6a9cc8;
+  --px-input-bg: #ffffff;
+  --bubble-me-bg: #cce7ff;
+  --bubble-me-hover: #b7dcff;
+  --bubble-other-bg: #ffffff;
+  --contact-active-bg: #d7ecff;
+  --font-brand: "ZCOOL KuaiLe", "ZCOOL QingKe HuangYou", "Noto Sans SC", sans-serif;
+  --font-display: "ZCOOL KuaiLe", "Noto Sans SC", sans-serif;
+  --font-body: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --radius: 4px;
+  --radius-sm: 3px;
+  --radius-avatar: 4px;
+  --border-w: 2px;
+  --nav-border-w: 3px;
+  --elev: 3px 3px 0 #6a9cc8;
+  --elev-sm: 2px 2px 0 #6a9cc8;
+  --bg-overlay: linear-gradient(180deg, rgba(220, 238, 252, 0.95), rgba(197, 228, 250, 0.98));
+  --bg-scan: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 12px,
+    rgba(18, 183, 245, 0.04) 12px,
+    rgba(18, 183, 245, 0.04) 24px
+  );
+  --bg-tile: none;
+  --bg-tile-size: auto;
+  --brand-anim: none;
+  --motion-ease: ease;
+}
+
+html[data-theme="qq"] #top-nav {
+  background: linear-gradient(180deg, #3a8dde, #12b7f5);
+  border-bottom-color: #0b7fb0;
+}
+html[data-theme="qq"] #top-nav .nav-brand,
+html[data-theme="qq"] #top-nav .nav-brand:hover,
+html[data-theme="qq"] .nav-brand-mark,
+html[data-theme="qq"] .nav-tagline,
+html[data-theme="qq"] #top-nav .nav-version {
+  color: #fff;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.18);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+html[data-theme="qq"] #top-nav .nav-version {
+  background: rgba(255, 255, 255, 0.18);
+}
+html[data-theme="qq"] #top-nav .nav-link,
+html[data-theme="qq"] #top-nav .nav-manual,
+html[data-theme="qq"] #top-nav .theme-picker summary {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #fff;
+}
+html[data-theme="qq"] #top-nav .nav-link:hover,
+html[data-theme="qq"] #top-nav .nav-manual:hover,
+html[data-theme="qq"] #top-nav .theme-picker summary:hover {
+  background: #fff;
+  color: #0e9fd6;
+  border-color: #fff;
+}
+html[data-theme="qq"] #top-nav .nav-brand {
+  font-size: 16px;
+}
+html[data-theme="qq"] .dashboard-hero h1 {
+  font-size: 26px;
+  text-shadow: 2px 2px 0 var(--px-shadow);
+}
+html[data-theme="qq"] .dashboard-section h2::before {
+  content: "◆ ";
+  color: var(--px-lime);
+}
+html[data-theme="qq"] .nav-brand-mark { animation: none; }

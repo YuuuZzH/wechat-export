@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}语音导出 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">🔊 按人批量导出语音</h2>
+<p style="color:#8fb9a6;font-size:12px;margin:0 0 16px 0">
+  把某个人的语音留言按人聚合，导出成<strong>可单独打开</strong>的 HTML + 音频文件（可合并成一条、可留档）。
+</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:2"><label>会话（联系人/群聊名字，可留空配合发送者跨会话导出）</label>
+      <input id="cfg-chat" placeholder="例如 张三、家族群（也可填会话 ID）"></div>
+    <div style="flex:2"><label>发送者（留空 = 该会话全部人；可多选）</label>
+      <select id="cfg-sender" multiple size="4"></select></div>
+  </div>
+  <div class="form-row">
+    <div><label>开始日期</label><input id="cfg-from" type="date"></div>
+    <div><label>结束日期</label><input id="cfg-to" type="date"></div>
+    <div><label>音频格式</label>
+      <select id="cfg-format">
+        <option value="mp3" selected>MP3（推荐：体积小、到处能放）</option>
+        <option value="wav">WAV（无损，体积大）</option>
+        <option id="opt-m4a" value="m4a" disabled>M4A（需要 ffmpeg）</option>
+      </select></div>
+    <div><label>合并方式</label>
+      <select id="cfg-merge-by">
+        <option value="person" selected>按人合并</option>
+        <option value="chat">按会话合并</option>
+        <option value="none">不合并（只出逐条）</option>
+      </select></div>
+    <div><label>拆分</label>
+      <select id="cfg-split">
+        <option value="single" selected>一个文件</option>
+        <option value="per-day">按天</option>
+        <option value="per-month">按月</option>
+      </select></div>
+    <div><label>段间静音(秒)</label>
+      <input id="cfg-gap" type="number" value="1.0" step="0.5" min="0" max="5"></div>
+    <div><label>编码速度</label>
+      <select id="cfg-quality">
+        <option value="9">最快（音质略降）</option>
+        <option value="7" selected>默认（快，推荐）</option>
+        <option value="5">高质量</option>
+        <option value="2">最高质量（慢）</option>
+      </select></div>
+  </div>
+  <div class="form-row">
+    <div style="flex:3"><label>输出内容</label>
+      <div id="cfg-layouts">
+        <label><input type="checkbox" value="html-folder" checked> 独立 HTML（文件夹式）</label>
+        <label><input type="checkbox" value="html-inline"> 单文件内嵌 HTML（便于发给家人）</label>
+        <label><input type="checkbox" value="files" checked> 逐条音频文件（姓名+时间命名）</label>
+        <label><input type="checkbox" value="merged" checked> 合并音频（按上面的规则）</label>
+        <label><input type="checkbox" id="cfg-other-chats"> 包含 TA 在其它会话里的语音（需全库扫描，较慢）</label>
+        <label><input type="checkbox" id="cfg-keep-silk">         
+保留原始 .silk 文件</label>
+        <label style="display:block;margin-top:6px" title="只会带上已经转写过的语音（只读转写库，不会为了导出而跑识别）"><input type="checkbox" id="cfg-asr"> 包含语音转文字（如有）</label>
+      </div></div>
+    <div><label>&nbsp;</label><button id="btn-run" class="btn btn-primary">开始导出</button></div>
+    <div><label>&nbsp;</label><button id="btn-cancel" class="btn" style="display:none">停止</button></div>
+  </div>
+  <p id="caps-hint" style="color:#8fb9a6;font-size:12px;margin:8px 0 0 0"></p>
+</div>
+
+<div id="progress-container" class="progress-panel" style="display:none">
+  <div class="progress-bar-outer"><div id="progress-bar" class="progress-bar-inner" style="width:0%"></div></div>
+  <div id="progress-detail" class="progress-detail">等待开始...</div>
+  <div id="log-console" class="log-console" style="margin-top:12px"></div>
+</div>
+
+<div id="result-container" class="result-panel" style="display:none">
+  <h3>✓ 导出完成</h3>
+  <div id="result-content"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/sse_progress.js') }}"></script>
+<script src="{{ url_for('static', filename='js/voice-export.js') }}"></script>
+{% endblock %}

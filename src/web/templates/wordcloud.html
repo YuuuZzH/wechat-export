@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}词云分析 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">☁️ 词云分析</h2>
+<p style="color:#8fb9a6;font-size:12px;margin:0 0 20px 0">智能中文分词 + 词频统计，生成交互式词云图</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:2"><label>聊天对象 (留空=全部)</label><input id="cfg-chat" placeholder="指定聊天对象标识"></div>
+    <div style="flex:1"><label>年份</label><input id="cfg-year" type="number" value="2026" min="2011" max="2030"></div>
+    <div><label>&nbsp;</label><button id="btn-run" class="btn btn-primary">生成词云</button></div>
+  </div>
+</div>
+
+<div id="progress-container" class="progress-panel" style="display:none">
+  <div class="progress-bar-outer"><div id="progress-bar" class="progress-bar-inner" style="width:0%"></div></div>
+  <div id="progress-detail" class="progress-detail">等待开始...</div>
+  <div id="log-console" class="log-console" style="margin-top:12px"></div>
+</div>
+
+<div id="result-container" class="result-panel" style="display:none">
+  <h3>✓ 词云生成完成</h3>
+  <div id="result-content"></div>
+</div>
+
+<div id="select-container" class="select-container" style="display:none"></div>
+
+<style>
+.select-container {
+  background: #16213e;
+  border: 1px solid #2f6b54;
+  border-radius:0;
+  padding: 20px;
+  margin-top: 16px;
+  max-width: 600px;
+}
+.select-list { display: flex; flex-direction: column; gap: 8px; }
+.select-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; background: #1a1a2e; border: 1px solid #2f6b54;
+  border-radius:0; cursor: pointer; transition: all 0.15s;
+}
+.select-item:hover { background: #0f3460; border-color: #e94560; }
+.select-name { color: #eee; font-size: 15px; font-weight: 500; }
+.select-count { color: #8fb9a6; font-size: 12px; }
+</style>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/sse_progress.js') }}"></script>
+<script src="{{ url_for('static', filename='js/wizard.js') }}"></script>
+<script>
+new WizardPage({
+  runBtnId: 'btn-run',
+  apiUrl: '/api/export/wordcloud',
+  steps: ['analyze'],
+  getBody: () => ({
+    chat: document.getElementById('cfg-chat').value,
+    year: parseInt(document.getElementById('cfg-year').value),
+  }),
+});
+</script>
+{% endblock %}

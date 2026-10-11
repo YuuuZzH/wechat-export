@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}WeChat Export — 全局搜索{% endblock %}
+{% block nav_right %}
+<a href="/" class="nav-link">仪表盘</a>
+<a href="/contacts" class="nav-link">通讯录</a>
+{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">🔍 全局搜索</h2>
+<p style="color:#8fb9a6;font-size:12px;margin:0 0 16px 0">跨全部聊天记录搜索与筛选（全文 / 日期 / 类型 / 发送者 / 会话 / 标签 / 正则）</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:3"><label>关键词</label><input id="search-input" placeholder="维修 / &quot;服务器 宕机&quot; / /报修|维修/"></div>
+    <div style="flex:2"><label>会话</label><input id="search-chat" placeholder="留空 = 全部会话"></div>
+    <div style="flex:1"><label>发送者</label><input id="search-sender" placeholder="我"></div>
+  </div>
+  <div class="form-row">
+    <div style="flex:2"><label>类型（可多选）</label><select id="search-type" multiple>{% for t in type_options %}
+      <option value="{{ t.label }}">{{ t.label }}</option>{% endfor %}
+    </select></div>
+    <div style="flex:1"><label>开始日期</label><input id="search-date-from" type="date"></div>
+    <div style="flex:1"><label>结束日期</label><input id="search-date-to" type="date"></div>
+    <div style="flex:1"><label>标签</label><select id="search-label"><option value="">全部标签</option></select></div>
+    <div><label>&nbsp;</label><button id="search-run" class="btn btn-primary">搜索</button></div>
+  </div>
+  <div class="form-row">
+    <div style="flex:1"><label>高级语法（与上方表单双向同步）</label><input id="search-syntax" placeholder="维修 类型:图片 日期:2026-01..2026-03 -退货"></div>
+    <div><label>&nbsp;</label><button id="search-help-toggle" class="btn btn-secondary">语法速查</button></div>
+  </div>
+  <pre id="search-help" style="display:none;background:#0a1612;border:1px solid #2f6b54;border-radius:0;padding:10px;font-size:12px;color:#8fb9a6"></pre>
+</div>
+
+<div id="search-index-bar" class="progress-panel" style="display:none"></div>
+<div id="search-results"></div>
+{% endblock %}
+{% block scripts %}
+{# 加载顺序是契约（T7-A7）：后一个文件依赖前一个定义的全局符号。 #}
+{# search-syntax.js / search-render.js 由 Task 9 创建；此处先引入是正常的。 #}
+<script src="{{ url_for('static', filename='js/api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sse_progress.js') }}"></script>
+<script src="{{ url_for('static', filename='js/search-syntax.js') }}"></script>
+<script src="{{ url_for('static', filename='js/search-render.js') }}"></script>
+<script src="{{ url_for('static', filename='js/search-app.js') }}"></script>
+{% endblock %}

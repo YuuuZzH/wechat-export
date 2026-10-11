@@ -1,0 +1,332 @@
+<!-- keys_prechange_baseline.html — Task 22 改造前的 keys.html 逐字节快照
+     （作用只有一个：同一份旧 /api/keys/dirs 响应下，改造前后的可观测状态必须逐字相同）。
+     **从 `{% extends %}` 开始才是正文**：正文必须与改造前的 src/web/templates/keys.html
+     逐字节一致（正文的 SHA-256 由 tests/test_keys_page.py 钉住）。不要手改本文件。 -->
+{% extends "base.html" %}
+{% block title %}手动输入密钥 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">🔑 手动输入密钥</h2>
+<p style="color:#8b949e;font-size:12px;margin:0 0 20px 0">
+  手上已经有密钥？直接粘贴进来。程序会逐个数据库做 HMAC 实测校验，配对成功后写入配置，
+  此后「解密数据库」「一键备份」「聊天导出」「聊天查看器」等功能都能直接使用，无需再提取密钥。</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:3"><label>微信数据目录（db_storage）</label><select id="cfg-db-dir"></select></div>
+    <div><label>&nbsp;</label><button class="btn" id="btn-refresh">刷新状态</button></div>
+    <div><label>&nbsp;</label><button class="btn" id="btn-deep">🔍 深度搜索</button></div>
+  </div>
+  <div class="form-row" style="margin-top:10px">
+    <div style="flex:4"><label>找不到目录？手动填写</label>
+      <input id="cfg-manual-dir" placeholder="例如: D:\WeChat\xwechat_files\wxid_xxx_1a2b\db_storage（填到 xwechat_files 或账号目录也可以）"></div>
+    <div><label>&nbsp;</label><button class="btn" id="btn-use-dir">使用该目录</button></div>
+  </div>
+  <div id="dir-hint" style="color:#8b949e;font-size:12px;margin-top:10px;line-height:1.8">
+    💡 找不到数据目录时：① 点「深度搜索」再找一遍（约 30–45 秒）；② 或在微信里打开
+    <b>设置 → 文件管理 → 打开文件夹</b>，把里面的 <code>xwechat_files\&lt;账号&gt;\db_storage</code> 路径填到上面。
+  </div>
+</div>
+
+<style>
+.kv-cell { padding:6px 8px; }
+.kv-mono { font-family:Consolas,monospace; }
+.kv-muted { color:#8b949e; }
+.kv-mini { padding:4px 10px; font-size:12px; }
+table.kv-table { width:100%; border-collapse:collapse; font-size:13px; color:#c9d1d9; }
+table.kv-table th { text-align:left; padding:6px 8px; color:#8b949e; font-size:12px; font-weight:normal; }
+</style>
+
+<div class="config-panel" style="margin-top:16px">
+  <h3 style="margin:0 0 12px 0;font-size:15px;color:#eee">密钥覆盖情况 <span id="sum-badge" style="font-size:12px;color:#8b949e;font-weight:normal"></span></h3>
+  <table id="db-table" class="kv-table">
+    <thead><tr>
+      <th>数据库</th><th>大小</th><th>状态</th><th>密钥</th><th>操作</th>
+    </tr></thead>
+    <tbody id="db-body"><tr><td colspan="5" class="kv-cell kv-muted">加载中...</td></tr></tbody>
+  </table>
+</div>
+
+<div class="config-panel" style="margin-top:16px">
+  <h3 style="margin:0 0 12px 0;font-size:15px;color:#eee">粘贴密钥 / 密钥扫描日志</h3>
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+    <input type="file" id="cfg-file" accept=".txt,.log,.json,.csv,text/*"
+           style="font-size:12px;color:#8b949e">
+    <span id="cfg-file-info" style="font-size:12px;color:#8b949e"></span>
+  </div>
+  <textarea id="cfg-text" rows="10" spellcheck="false" style="width:100%;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:8px;padding:10px;font-family:Consolas,monospace;font-size:13px"
+    placeholder="推荐：直接把密钥扫描的整段输出粘进来（含 [Cipher-FOUND] 那些行，头尾日志行会自动忽略）&#10;  [Cipher-FOUND] message\message_0.db salt=1a2b...(32位salt) -> 4d5e...(64位密钥)&#10;&#10;也支持手写：&#10;message_0.db = 1a2b3c...(64位十六进制密钥)&#10;message/message_1.db: 4d5e6f...&#10;x'7a8b9c...(64位key)d4e5f6...(32位salt)'&#10;9f8e7d...(只写密钥，自动匹配数据库)"></textarea>
+  <div style="color:#8b949e;font-size:12px;line-height:1.9;margin-top:10px">
+    <b>自动识别格式</b>（每行一条，<code>#</code> 开头为注释）：<br>
+    · <code>[Cipher-FOUND] 路径 salt=&lt;32位&gt; -&gt; &lt;64位&gt;</code> — <b>密钥扫描日志整段粘贴</b>，头尾的
+      <code>[Cipher] …</code> 日志行会被当作噪声忽略，<b>不算错误</b><br>
+    · <code>密钥</code> — 64 位十六进制，程序会自动试出它属于哪个数据库<br>
+    · <code>数据库名 = 密钥</code> — 明确指定，如 <code>message_0.db = &lt;64位hex&gt;</code>（相对路径如 <code>message/message_0.db</code> 也可以）<br>
+    · <code>x'&lt;64位key&gt;&lt;32位salt&gt;'</code> — 微信原始形式（96 位十六进制），按 salt 精确定位<br>
+    · 密钥中间有空格/短横线、带引号、带 <code>0x</code> 前缀都能识别<br>
+    · <b>打码/脱敏的内容</b>（含 <code>*</code>、<code>…</code>）会被识别并单独提示 ——
+      HMAC 校验需要完整密钥，打码的用不了
+  </div>
+  <label style="display:flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;color:#8b949e">
+    <input type="checkbox" id="cfg-force" style="width:auto">
+    强制保存未通过校验的密钥（仅当该行明确写了数据库名时生效，用于数据库文件不在本机等特殊情况）
+  </label>
+  <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+    <button class="btn btn-primary" id="btn-save">验证并保存</button>
+    <button class="btn" id="btn-verify">仅验证（不保存）</button>
+    <button class="btn" id="btn-export">导出对应关系清单</button>
+  </div>
+</div>
+
+<div id="result-panel" class="config-panel" style="margin-top:16px;display:none">
+  <h3 style="margin:0 0 12px 0;font-size:15px;color:#eee">校验结果</h3>
+  <div id="result-summary" style="color:#8b949e;font-size:12px;margin-bottom:10px"></div>
+  <table class="kv-table">
+    <thead><tr>
+      <th>行</th><th>密钥</th><th>结果</th><th>匹配到的数据库</th>
+    </tr></thead>
+    <tbody id="result-body"></tbody>
+  </table>
+  <div id="next-step" style="display:none;margin-top:14px;padding:12px;background:#1a1a2e;border:1px solid #30363d;border-radius:10px;font-size:13px">
+    <div style="margin-bottom:8px" id="next-step-text"></div>
+    <a href="/decrypt" class="btn btn-primary" style="text-decoration:none;display:inline-block">🔓 去解密数据库</a>
+    <a href="/" class="btn" style="text-decoration:none;display:inline-block;margin-left:8px">返回仪表盘</a>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function el(id) { return document.getElementById(id); }
+function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+
+function currentDir() { return el("cfg-db-dir").value || ""; }
+
+function applyDirs(data) {
+  const sel = el("cfg-db-dir");
+  sel.innerHTML = "";
+  const dirs = data.dirs || [];
+  if (!dirs.length && data.current) dirs.push({ db_path: data.current, wxid: "", db_count: 0, size_mb: 0 });
+  dirs.forEach(function (d) {
+    const o = document.createElement("option");
+    o.value = d.db_path;
+    o.textContent = d.db_path + (d.wxid ? "  (" + d.wxid + ")" : "");
+    sel.appendChild(o);
+  });
+  if (data.current) {
+    let found = false;
+    for (const o of sel.options) { if (o.value === data.current) { found = true; break; } }
+    if (!found) { const o = document.createElement("option"); o.value = data.current; o.textContent = data.current; sel.appendChild(o); }
+    sel.value = data.current;
+  }
+  return (data.dirs || []).length;
+}
+
+function loadDirs(mode) {
+  return fetch("/api/keys/dirs?mode=" + (mode || "auto")).then(function (r) { return r.json(); }).then(function (data) {
+    const n = applyDirs(data);
+    if (!n) {
+      el("dir-hint").innerHTML = "❌ <b>未自动检测到微信数据目录</b>：请点上面的「🔍 深度搜索」再找一遍；"
+        + "或在微信里打开「设置 → 文件管理 → 打开文件夹」，把 <code>xwechat_files\\&lt;账号&gt;\\db_storage</code> 路径填到输入框后点「使用该目录」。";
+    }
+    return data;
+  }).catch(function (e) { el("dir-hint").textContent = "读取目录失败: " + e; });
+}
+
+function deepSearch() {
+  const btn = el("btn-deep");
+  btn.disabled = true;
+  el("dir-hint").innerHTML = "🔍 正在深度搜索磁盘（最多 45 秒，请稍候）...";
+  fetch("/api/keys/dirs?mode=deep").then(function (r) { return r.json(); }).then(function (data) {
+    btn.disabled = false;
+    const n = applyDirs(data);
+    el("dir-hint").innerHTML = n
+      ? ("🔍 深度搜索完成，共找到 " + n + " 个数据目录。")
+      : "🔍 深度搜索仍未找到。请在微信里打开「设置 → 文件管理 → 打开文件夹」，把目录路径填到下面的输入框。";
+    loadStatus();
+  }).catch(function (e) { btn.disabled = false; el("dir-hint").textContent = "深度搜索失败: " + e; });
+}
+
+function useManualDir() {
+  const path = el("cfg-manual-dir").value.trim();
+  if (!path) { alert("请先填写微信数据目录路径"); return; }
+  fetch("/api/keys/dbdir", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: path }) })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) { alert("失败: " + (data.message || data.error)); return; }
+      el("dir-hint").innerHTML = "✅ 已记住数据目录：<code>" + esc(data.dbDir) + "</code>（备份 / 解密 / 密钥都会用它）";
+      return loadDirs("fast").then(loadStatus);
+    })
+    .catch(function (e) { alert("请求失败: " + e); });
+}
+
+const ST = {
+  verified: { text: "✓ 已就绪", color: "#3fb950" },
+  invalid: { text: "⚠ 密钥不匹配", color: "#d29922" },
+  missing: { text: "✗ 缺少密钥", color: "#f85149" },
+  plain: { text: "○ 未加密（无需密钥）", color: "#8b949e" }
+};
+
+function renderStatus(data) {
+  el("sum-badge").textContent = "（共 " + data.total + " 个数据库：已就绪 " + data.verified
+    + "，缺少 " + data.missing + "，密钥不匹配 " + (data.invalid || 0)
+    + (data.plain ? "，未加密 " + data.plain : "") + "）";
+  const body = el("db-body");
+  body.innerHTML = "";
+  const list = data.databases || [];
+  if (!list.length) {
+    body.innerHTML = "<tr><td colspan=5 class=\"kv-cell kv-muted\">该目录下没有找到数据库文件</td></tr>";
+    return;
+  }
+  list.forEach(function (d) {
+    const state = d.plain ? ST.plain : (d.verified ? ST.verified : (d.hasKey ? ST.invalid : ST.missing));
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      "<td class=kv-cell><code>" + esc(d.rel) + "</code></td>" +
+      "<td class=kv-cell>" + esc(d.sizeMb) + " MB</td>" +
+      "<td class=kv-cell style=\"color:" + state.color + "\">" + state.text + "</td>" +
+      "<td class=\"kv-cell kv-mono\">" + (d.keyMasked ? esc(d.keyMasked) : "—") + "</td>" +
+      "<td class=kv-cell>" + (d.hasKey ? "<button class=\"btn kv-mini\" data-rel=\"" + esc(d.rel) + "\">清除</button>" : "") + "</td>";
+    body.appendChild(tr);
+  });
+  body.querySelectorAll("button[data-rel]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      if (!confirm("确定清除 " + b.dataset.rel + " 的密钥？")) return;
+      fetch("/api/keys/remove", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ db_dir: currentDir(), rel: b.dataset.rel }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { if (d.status) renderStatus(d.status); });
+    });
+  });
+}
+
+function loadStatus() {
+  el("sum-badge").textContent = "（读取中...）";
+  return fetch("/api/keys/status?db_dir=" + encodeURIComponent(currentDir()))
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) { el("sum-badge").textContent = data.message || data.error; return; }
+      renderStatus(data);
+    })
+    .catch(function (e) { el("sum-badge").textContent = "读取失败: " + e; });
+}
+
+function renderResults(data, saved) {
+  el("result-panel").style.display = "block";
+  const body = el("result-body");
+  body.innerHTML = "";
+  (data.results || []).forEach(function (r) {
+    const ok = r.status === "matched" || r.status === "forced";
+    const names = (r.matched || []).map(function (m) { return m.rel + "（salt " + m.salt + "）"; }).join("<br>");
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      "<td class=kv-cell>" + esc(r.line) + "</td>" +
+      "<td class=\"kv-cell kv-mono\">" + esc(r.keyMasked) + "</td>" +
+      "<td class=kv-cell style=\"color:" + (ok ? "#3fb950" : "#d29922") + "\">" + esc(r.message || r.status) + "</td>" +
+      "<td class=kv-cell>" + (names || "—") + "</td>";
+    body.appendChild(tr);
+  });
+  const matched = (data.results || []).filter(function (r) { return r.status === "matched" || r.status === "forced"; }).length;
+  let head = saved === true
+    ? ("已保存 " + (data.saved || 0) + " 个数据库的密钥；本次 " + matched + " 个密钥校验通过。")
+    : ("仅校验未保存：本次 " + matched + " 个密钥校验通过。");
+  const s = data.summary;
+  if (s) {
+    const bits = [];
+    if (s.cipher_log) bits.push("识别到 " + s.cipher_log + " 条密钥扫描日志");
+    if (s.generic) bits.push(s.generic + " 条手写格式");
+    if (s.noise) bits.push(s.noise + " 行日志噪声（已忽略，不算错误）");
+    if (s.masked) bits.push(s.masked + " 行打码/脱敏（无法使用）");
+    if (s.errors) bits.push(s.errors + " 行无法识别");
+    if (bits.length) head += "　—　" + bits.join("；") + "。";
+  }
+  el("result-summary").textContent = head;
+  if (saved === true && data.saved > 0) {
+    el("next-step").style.display = "block";
+    el("next-step-text").innerHTML = "密钥已写入配置，现在可以使用其它功能了：<b>解密数据库</b>（把数据库解密到本地）→ 之后即可用「聊天查看器 / 聊天导出 / 年度报告」等。";
+  } else {
+    el("next-step").style.display = "none";
+  }
+  if (data.status) renderStatus(data.status);
+}
+
+function readLogFile(file) {
+  // 优先按 UTF-8 严格解码；失败则按 GBK 再试 —— Windows 控制台重定向出来的日志常是 GBK。
+  const info = el("cfg-file-info");
+  const buf = file.arrayBuffer();
+  const done = function (text, enc) {
+    el("cfg-text").value = text;
+    info.textContent = "已读入 " + file.name + "（" + enc + "，" + text.split("\n").length + " 行）";
+  };
+  buf.then(function (ab) {
+    try {
+      done(new TextDecoder("utf-8", { fatal: true }).decode(ab), "UTF-8");
+      return;
+    } catch (e) { /* 落到 GBK */ }
+    try {
+      done(new TextDecoder("gbk").decode(ab), "GBK");
+      return;
+    } catch (e) { /* 落到兜底 */ }
+    done(new TextDecoder("utf-8").decode(ab), "UTF-8（有替换字符）");
+  }).catch(function (e) { alert("读取文件失败: " + e); });
+}
+
+function exportList() {
+  const text = el("cfg-text").value;
+  if (!text.trim()) { alert("请先粘贴密钥或选择日志文件"); return; }
+  el("btn-export").disabled = true;
+  fetch("/api/keys/export", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ db_dir: currentDir(), text: text }) })
+    .then(function (r) {
+      if (!r.ok) {
+        return r.json().then(function (d) { throw new Error(d.message || d.error || ("HTTP " + r.status)); },
+                             function () { throw new Error("HTTP " + r.status); });
+      }
+      const cd = r.headers.get("Content-Disposition") || "";
+      const m = /filename=([^;]+)/.exec(cd);
+      const name = m ? m[1].trim().replace(/^"|"$/g, "") : "keys_export.txt";
+      return r.blob().then(function (blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+      });
+    })
+    .catch(function (e) { alert("导出失败: " + (e.message || e)); })
+    .then(function () { el("btn-export").disabled = false; });
+}
+
+function submit(save) {
+  const text = el("cfg-text").value;
+  if (!text.trim()) { alert("请先粘贴密钥"); return; }
+  const url = save ? "/api/keys/save" : "/api/keys/verify";
+  el("btn-save").disabled = true; el("btn-verify").disabled = true;
+  fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ db_dir: currentDir(), text: text, force: el("cfg-force").checked }) })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      el("btn-save").disabled = false; el("btn-verify").disabled = false;
+      if (data.error) { alert("失败: " + (data.message || data.error)); return; }
+      renderResults(data, save);
+    })
+    .catch(function (e) {
+      el("btn-save").disabled = false; el("btn-verify").disabled = false;
+      alert("请求失败: " + e);
+    });
+}
+
+el("btn-refresh").addEventListener("click", function () { loadStatus(); });
+el("btn-deep").addEventListener("click", deepSearch);
+el("btn-use-dir").addEventListener("click", useManualDir);
+el("cfg-db-dir").addEventListener("change", function () { loadStatus(); });
+el("btn-save").addEventListener("click", function () { submit(true); });
+el("btn-verify").addEventListener("click", function () { submit(false); });
+el("btn-export").addEventListener("click", exportList);
+el("cfg-file").addEventListener("change", function () {
+  if (this.files && this.files[0]) readLogFile(this.files[0]);
+});
+
+loadDirs().then(loadStatus);
+</script>
+{% endblock %}

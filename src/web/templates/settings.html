@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block title %}设置 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">⚙️ 设置</h2>
+<p style="color:#8fb9a6;font-size:12px;margin:0 0 20px 0">语音转文字（ASR）引擎与凭据设置</p>
+
+<div class="config-panel">
+  <h3 style="margin:0 0 12px 0;font-size:15px;color:#eee">语音转写引擎</h3>
+  <label style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px;font-size:13px;color:#e8f7ee">
+    <input type="radio" name="engine" value="local" id="eng-local" style="margin-top:3px">
+    <span><b>本地 Whisper 模型</b>（免费、离线、隐私最好）<br>
+      <span style="color:#8fb9a6;font-size:11px">中文准确度一般，长语音可能漏内容；模型文件需下载一次（42–240MB）</span></span>
+  </label>
+  <label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;color:#e8f7ee">
+    <input type="radio" name="engine" value="baidu" id="eng-baidu" style="margin-top:3px">
+    <span><b>百度语音识别</b>（需自备 API Key，准确度高、有标点）<br>
+      <span style="color:#8fb9a6;font-size:11px">音频会上传到百度服务器识别（本地模型则完全离线）；
+      在 <a href="https://console.bce.baidu.com/ai/#/ai/speech/app/list" target="_blank" rel="noopener" style="color:#f0c040">百度智能云控制台</a>
+      创建「语音技术」应用即可免费获得 API Key / Secret Key（短语音识别有免费额度）</span></span>
+  </label>
+</div>
+
+<div class="config-panel" style="margin-top:16px" id="local-panel">
+  <h3 style="margin:0 0 12px 0;font-size:15px;color:#eee">本地模型</h3>
+  <div class="form-row">
+    <div style="flex:3"><label>模型</label><select id="cfg-model"></select></div>
+    <div style="flex:2"><label>语言</label>
+      <select id="cfg-language">
+        <option value="zh">中文（推荐，长语音必须）</option>
+        <option value="auto">自动检测</option>
+        <option value="en">English</option>
+      </select></div>
+    <div style="flex:2;display:flex;align-items:flex-end">
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8fb9a6;margin-bottom:8px">
+        <input type="checkbox" id="cfg-simplify" style="width:auto"> 繁体自动转简体</label></div>
+  </div>
+  <div id="model-status" style="color:#8fb9a6;font-size:12px;margin-top:10px"></div>
+  <div style="margin-top:10px">
+    <button class="btn" id="btn-model-download">⬇ 下载/校验模型</button>
+    <span id="model-progress" style="color:#f0c040;font-size:12px;margin-left:10px"></span>
+  </div>
+  <div style="margin-top:8px;height:6px;background:#1a3d32;border-radius:0;overflow:hidden;display:none" id="model-bar-wrap">
+    <div id="model-bar" style="height:100%;width:0%;background:#f0c040;transition:width .2s"></div>
+  </div>
+</div>
+
+<div class="config-panel" style="margin-top:16px" id="baidu-panel">
+  <h3 style="margin:0 0 12px 0;font-size:15px;color:#eee">百度语音识别</h3>
+  <div class="form-row">
+    <div style="flex:3"><label>API Key</label><input id="cfg-baidu-key" placeholder="百度智能云的 API Key"></div>
+    <div style="flex:3"><label>Secret Key</label><input id="cfg-baidu-secret" type="password" placeholder="百度智能云的 Secret Key"></div>
+  </div>
+  <div class="form-row" style="margin-top:8px">
+    <div style="flex:3"><label>识别模型</label><select id="cfg-baidu-pid"></select></div>
+    <div style="flex:2;display:flex;align-items:flex-end">
+      <button class="btn" id="btn-test-baidu">🔌 测试连接</button></div>
+  </div>
+  <div id="baidu-hint" style="color:#8fb9a6;font-size:12px;margin-top:10px">
+    Key 只保存在本机 exe 同目录的 .wechat_exp_config.json 里，不会上传到别处；界面显示时只保留后 4 位。
+  </div>
+</div>
+
+<div class="config-panel" style="margin-top:16px" id="dbdir-panel">
+  <h3 style="margin:0 0 12px 0;font-size:15px;color:#eee">微信数据目录</h3>
+  <div class="form-row">
+    <div style="flex:2"><label>微信数据目录 (db_storage)</label><input id="cfg-db-dir" placeholder="例如: D:\xwechat_files\wxid_xxx\db_storage"></div>
+  </div>
+  <div style="margin-top:8px">
+    <button id="btn-deep" class="btn btn-secondary" style="font-size:11px">🔍 深度搜索</button>
+    <button id="btn-use-dir" class="btn btn-secondary" style="font-size:11px">使用该目录</button>
+  </div>
+  <div class="form-row" style="margin-top:8px">
+    <div style="flex:4"><label>检测到的数据目录（选择即填入上面的输入框）</label>
+      <select id="cfg-db-dir-list" style="width:100%;padding:8px 10px;border:1px solid #2f6b54;border-radius:0;background:#0a1612;color:#e8f7ee;font-size:13px"></select></div>
+  </div>
+  <div id="dir-hint" style="color:#8fb9a6;font-size:12px;margin-top:8px;line-height:1.8">
+    💡 找不到数据目录时点「🔍 深度搜索」（最长 45 秒）；也可以在微信「设置 → 文件管理 → 打开文件夹」里查看，
+    把 <code>xwechat_files\&lt;账号&gt;\db_storage</code> 粘贴到输入框后点「使用该目录」。</div>
+</div>
+
+<div style="margin-top:18px;display:flex;align-items:center;gap:12px">
+  <button class="btn btn-primary" id="btn-save">保存设置</button>
+  <span id="save-msg" style="font-size:12px;color:#4ecf8a"></span>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dbdir.js') }}"></script>
+<script>
+function el(id) { return document.getElementById(id); }
+
+// 数据目录选择器（备份 / 解密 / 密钥 / 设置 共用同一份 dbdir.js）。
+// 「使用该目录」会 POST /api/keys/dbdir 把目录写进统一配置 —— 不是塞进 ASR 设置里。
+const dirPicker = new DbDirPicker({ inputId: 'cfg-db-dir' });
+
+var AVAILABLE = [];
+
+function renderModels(status) {
+  var sel = el("cfg-model");
+  sel.innerHTML = "";
+  AVAILABLE = (status && status.localModelStatus && status.localModelStatus.available) || [];
+  var current = (status && status.local_model) || "";
+  if (!AVAILABLE.length) {
+    var o = document.createElement("option");
+    o.value = current;
+    o.textContent = current;
+    sel.appendChild(o);
+  }
+  AVAILABLE.forEach(function (m) {
+    var o = document.createElement("option");
+    o.value = m.model;
+    o.textContent = m.label + (m.recommended ? "（推荐）" : "") + " · " + m.sizeMb + "MB"
+      + (m.complete ? " · 已就绪" : "");
+    if (m.model === current) o.selected = true;
+    sel.appendChild(o);
+  });
+  var ms = (status && status.localModelStatus) || {};
+  var bundledN = (ms.files || []).filter(function (f) { return f.bundled; }).length;
+  el("model-status").innerHTML = ms.complete
+    ? "✅ 模型已就绪（" + (ms.model || "") + "）"
+    : "⚠ 模型未下载完整：缺少 " + ((ms.missing || []).length) + " 个文件、约 "
+      + (ms.missingMb || 0) + " MB"
+      + (bundledN ? "（其中 " + bundledN + " 个随程序内置，无需下载）" : "")
+      + "，请点「下载/校验模型」";
+}
+
+function loadSettings() {
+  return fetch("/api/settings/asr").then(function (r) { return r.json(); }).then(function (st) {
+    el("eng-local").checked = (st.engine !== "baidu");
+    el("eng-baidu").checked = (st.engine === "baidu");
+    el("cfg-language").value = st.language || "zh";
+    el("cfg-simplify").checked = !!st.simplify;
+    el("cfg-baidu-key").value = st.baidu_api_key || "";
+    el("cfg-baidu-secret").value = st.baidu_secret_key || "";
+    var pidSel = el("cfg-baidu-pid");
+    pidSel.innerHTML = "";
+    (st.devPids || []).forEach(function (p) {
+      var o = document.createElement("option");
+      o.value = p.value;
+      o.textContent = p.label + " (" + p.value + ")";
+      if (String(p.value) === String(st.baidu_dev_pid)) o.selected = true;
+      pidSel.appendChild(o);
+    });
+    renderModels(st);
+    if (st.warning) el("save-msg").textContent = st.warning;
+  });
+}
+
+function collect() {
+  return {
+    engine: el("eng-baidu").checked ? "baidu" : "local",
+    local_model: el("cfg-model").value,
+    language: el("cfg-language").value,
+    simplify: el("cfg-simplify").checked,
+    baidu_api_key: el("cfg-baidu-key").value.trim(),
+    baidu_secret_key: el("cfg-baidu-secret").value.trim(),
+    baidu_dev_pid: parseInt(el("cfg-baidu-pid").value, 10) || 1537,
+  };
+}
+
+function save() {
+  fetch("/api/settings/asr", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(collect()) })
+    .then(function (r) { return r.json(); })
+    .then(function (st) {
+      el("save-msg").textContent = st.warning || "✅ 已保存";
+      el("save-msg").style.color = st.warning ? "#ffb020" : "#4ecf8a";
+      if (st.has_baidu_key !== undefined) {
+        if (st.baidu_api_key) el("cfg-baidu-key").value = st.baidu_api_key;
+        if (st.baidu_secret_key) el("cfg-baidu-secret").value = st.baidu_secret_key;
+      }
+    })
+    .catch(function (e) { el("save-msg").textContent = "保存失败: " + e; });
+}
+
+function testBaidu() {
+  el("baidu-hint").textContent = "正在测试…";
+  fetch("/api/settings/asr/test", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ baidu_api_key: el("cfg-baidu-key").value.trim(),
+                           baidu_secret_key: el("cfg-baidu-secret").value.trim() }) })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      el("baidu-hint").innerHTML = (d.ok ? "✅ " : "❌ ") + (d.message || "");
+      el("baidu-hint").style.color = d.ok ? "#4ecf8a" : "#ff5a6e";
+      if (d.ok) save();
+    })
+    .catch(function (e) { el("baidu-hint").textContent = "测试失败: " + e; });
+}
+
+function downloadModel() {
+  var model = el("cfg-model").value;
+  el("model-bar-wrap").style.display = "block";
+  el("model-progress").textContent = "开始下载 " + model + " …";
+  fetch("/api/asr/install", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: model }) })
+    .then(function (resp) {
+      if (!resp.body) { el("model-progress").textContent = "浏览器不支持进度显示"; return; }
+      var reader = resp.body.getReader();
+      var dec = new TextDecoder("utf-8");
+      var buf = "";
+      function pump() {
+        return reader.read().then(function (res) {
+          if (res.done) return;
+          buf += dec.decode(res.value, { stream: true });
+          var parts = buf.split("\n\n");
+          buf = parts.pop();
+          parts.forEach(function (block) {
+            var ev = "message", data = "";
+            block.split("\n").forEach(function (line) {
+              if (line.indexOf("event: ") === 0) ev = line.slice(7).trim();
+              else if (line.indexOf("data: ") === 0) data += line.slice(6);
+            });
+            if (!data) return;
+            var obj = null;
+            try { obj = JSON.parse(data); } catch (e) { return; }
+            if (ev === "progress") {
+              el("model-progress").textContent = obj.detail || "";
+              el("model-bar").style.width = Math.max(2, Math.round((obj.progress || 0) * 100)) + "%";
+            } else if (ev === "done") {
+              el("model-bar").style.width = "100%";
+              el("model-progress").textContent = "✅ " + ((obj.result && obj.result.message) || "完成");
+              loadSettings();
+            } else if (ev === "error") {
+              el("model-progress").textContent = "❌ " + (obj.message || "下载失败");
+            }
+          });
+          return pump();
+        });
+      }
+      return pump();
+    })
+    .catch(function (e) { el("model-progress").textContent = "请求失败: " + e; });
+}
+
+el("btn-save").addEventListener("click", save);
+el("btn-test-baidu").addEventListener("click", testBaidu);
+el("btn-model-download").addEventListener("click", downloadModel);
+el("eng-baidu").addEventListener("change", function () { save(); });
+el("eng-local").addEventListener("change", function () { save(); });
+loadSettings();
+</script>
+{% endblock %}

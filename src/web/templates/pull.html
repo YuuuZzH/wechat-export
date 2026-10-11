@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Pull 数据源 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">🌐 Pull 数据源（让 ChatLab 直接拉取）</h2>
+<p style="color:#8fb9a6;font-size:12px;margin:0 0 20px 0">
+  开启后 ChatLab 可通过「远程数据源 / Remote Data Source」直接读取本机聊天记录，无需先导出文件；
+  支持全量拉取与增量续拉（since 游标）。服务运行在本程序内部，关闭本程序即自动停止。</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:1.4"><label>监听地址</label>
+      <select id="cfg-host">
+        <option value="127.0.0.1">127.0.0.1（仅本机，推荐）</option>
+        <option value="0.0.0.0">0.0.0.0（局域网，供手机 ChatLab 连接）</option>
+      </select></div>
+    <div style="flex:1"><label>端口</label><input id="cfg-port" type="number" value="8765" min="1" max="65535"></div>
+    <div style="flex:2"><label>访问 Token（可选，留空则不校验）</label><input id="cfg-token" placeholder="例如: mytoken123"></div>
+    <div><label>&nbsp;</label><button id="btn-start" class="btn btn-primary">启动服务</button></div>
+    <div><label>&nbsp;</label><button id="btn-stop" class="btn">停止服务</button></div>
+  </div>
+  <label style="display:flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;color:#8fb9a6">
+    <input type="checkbox" id="cfg-auto" checked style="width:auto"> 端口被占用时自动顺延（+1 … +9）
+  </label>
+</div>
+
+<div class="config-panel" id="status-panel" style="margin-top:16px">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span id="status-badge" style="padding:4px 12px;border-radius:0;font-size:12px;background:#2f6b54;color:#8fb9a6">未启动</span>
+    <span id="status-meta" style="color:#8fb9a6;font-size:12px"></span>
+  </div>
+  <div id="conn-box" style="display:none;margin-top:14px;padding:14px;background:#1a1a2e;border:1px solid #2f6b54;border-radius:0">
+    <div style="color:#8fb9a6;font-size:12px;margin-bottom:6px">在 ChatLab 中填写的数据源地址</div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <code id="conn-url" style="color:#f0c040;font-size:15px"></code>
+      <button class="btn" id="btn-copy-url" style="padding:6px 14px;font-size:12px">复制地址</button>
+    </div>
+    <div id="conn-token-row" style="display:none;margin-top:10px">
+      <div style="color:#8fb9a6;font-size:12px;margin-bottom:6px">Token</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <code id="conn-token" style="color:#e94560;font-size:15px"></code>
+        <button class="btn" id="btn-copy-token" style="padding:6px 14px;font-size:12px">复制 Token</button>
+      </div>
+    </div>
+    <div id="conn-alt" style="display:none;margin-top:10px;color:#8fb9a6;font-size:12px"></div>
+    <div style="margin-top:12px;color:#8fb9a6;font-size:12px;line-height:1.7">
+      提示：ChatLab 会自动在地址后补 <code>/api/v1</code>（填 <code>http://127.0.0.1:8765</code> 时它请求的是
+      <code>http://127.0.0.1:8765/api/v1/sessions</code>）。本服务已<b>同时支持根路径与 /api/v1 前缀</b>，
+      两种地址都可以直接填。
+    </div>
+  </div>
+</div>
+
+<div class="config-panel" style="margin-top:16px">
+  <h3 style="margin:0 0 10px 0;font-size:15px;color:#eee">ChatLab 端操作步骤</h3>
+  <ol style="color:#8fb9a6;font-size:13px;line-height:1.9;margin:0;padding-left:20px">
+    <li>本页点击「启动服务」，等待状态变为 <b style="color:#4ecf8a">运行中</b>（首次会先扫描会话，约 1-3 秒）。</li>
+    <li>打开 ChatLab → 设置 / 数据源 → 添加远程数据源（Pull）。</li>
+    <li>地址填上面显示的 Url（本机用 127.0.0.1，手机端请用 0.0.0.0 模式给出的局域网地址）。</li>
+    <li>若设置了 Token，在 ChatLab 的 Token / 认证 一栏填入相同值。</li>
+    <li>选择要拉取的会话即可，已拉取过的会话再次同步时会自动增量续拉。</li>
+  </ol>
+  <p style="color:#8fb9a6;font-size:12px;margin:12px 0 0 0">
+    不想用远程数据源？也可以到 <a href="/export" style="color:#f0c040">聊天导出</a> 选择 ChatLab JSONL 导出文件后手动导入。</p>
+</div>
+
+<div class="config-panel" style="margin-top:16px">
+  <h3 style="margin:0 0 10px 0;font-size:15px;color:#eee">协议接口（chatlab-pull/v1）</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:12px;color:#8fb9a6">
+    <tr style="color:#eee"><th style="text-align:left;padding:6px 8px">方法</th><th style="text-align:left;padding:6px 8px">路径</th><th style="text-align:left;padding:6px 8px">说明</th></tr>
+    <tr><td style="padding:6px 8px">GET</td><td style="padding:6px 8px"><code>/sessions</code></td><td style="padding:6px 8px">会话列表，支持 keyword / limit / cursor 分页</td></tr>
+    <tr><td style="padding:6px 8px">GET</td><td style="padding:6px 8px"><code>/sessions/&lt;id&gt;/messages</code></td><td style="padding:6px 8px">消息内容，format=chatlab，支持 since / limit</td></tr>
+    <tr><td style="padding:6px 8px">GET</td><td style="padding:6px 8px"><code>/push/messages</code></td><td style="padding:6px 8px">SSE 增量推送（可选）</td></tr>
+    <tr><td style="padding:6px 8px">GET</td><td style="padding:6px 8px"><code>/health</code></td><td style="padding:6px 8px">健康检查</td></tr>
+  </table>
+  <p style="color:#8fb9a6;font-size:12px;margin:10px 0 0 0">
+    以上端点<strong>同时</strong>注册在 <code>/api/v1/...</code> 前缀下——ChatLab 客户端请求的正是该前缀（它会把填入的地址自动规范化为 <code>&lt;地址&gt;/api/v1</code>），两种写法完全等价。</p>
+</div>
+
+<div class="progress-panel" style="margin-top:16px">
+  <div class="progress-detail">服务日志</div>
+  <div id="log-console" class="log-console" style="margin-top:8px"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function el(id) { return document.getElementById(id); }
+
+function setBadge(running) {
+  var b = el("status-badge");
+  if (running) {
+    b.textContent = "● 运行中";
+    b.style.background = "rgba(63,185,80,0.15)";
+    b.style.color = "#4ecf8a";
+  } else {
+    b.textContent = "未启动";
+    b.style.background = "#2f6b54";
+    b.style.color = "#8fb9a6";
+  }
+}
+
+function render(data) {
+  if (!data) return;
+  setBadge(data.running);
+  var meta = [];
+  if (data.running) {
+    if (data.startedAtText) meta.push("启动于 " + data.startedAtText);
+    if (data.sessions !== null && data.sessions !== undefined) meta.push("会话数 " + data.sessions);
+    else meta.push("正在扫描会话…");
+  }
+  el("status-meta").textContent = meta.join("　·　");
+  if (data.running) {
+    el("conn-box").style.display = "block";
+    el("conn-url").textContent = data.url;
+    if (data.token) {
+      el("conn-token-row").style.display = "block";
+      el("conn-token").textContent = data.token;
+    } else {
+      el("conn-token-row").style.display = "none";
+    }
+    var alt = (data.urls || []).filter(function (u) { return u !== data.url; });
+    if (alt.length) {
+      el("conn-alt").style.display = "block";
+      el("conn-alt").textContent = "局域网地址（手机端使用）: " + alt.join("　");
+    } else {
+      el("conn-alt").style.display = "none";
+    }
+    el("btn-start").disabled = true;
+    el("btn-stop").disabled = false;
+  } else {
+    el("conn-box").style.display = "none";
+    el("btn-start").disabled = false;
+    el("btn-stop").disabled = true;
+  }
+  renderLog(data.log || []);
+}
+
+function renderLog(lines) {
+  var box = el("log-console");
+  box.innerHTML = "";
+  for (var i = 0; i < lines.length; i++) {
+    var d = document.createElement("div");
+    d.className = "log-line";
+    d.textContent = lines[i];
+    box.appendChild(d);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function refresh() {
+  fetch("/api/pull/status").then(function (r) { return r.json(); }).then(render).catch(function () {});
+}
+
+function post(url, body) {
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {})
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    if (data && data.error) { alert("操作失败: " + (data.message || data.error)); }
+    render(data);
+  }).catch(function (e) { alert("请求失败: " + e); });
+}
+
+el("btn-start").addEventListener("click", function () {
+  post("/api/pull/start", {
+    host: el("cfg-host").value,
+    port: parseInt(el("cfg-port").value, 10) || 8765,
+    token: el("cfg-token").value.trim(),
+    auto_port: el("cfg-auto").checked
+  });
+});
+el("btn-stop").addEventListener("click", function () { post("/api/pull/stop", {}); });
+
+function copyText(text, btn) {
+  var done = function () { var old = btn.textContent; btn.textContent = "已复制"; setTimeout(function () { btn.textContent = old; }, 1500); };
+  if (navigator.clipboard) { navigator.clipboard.writeText(text).then(done).catch(function () { alert(text); }); }
+  else { alert(text); }
+}
+el("btn-copy-url").addEventListener("click", function () { copyText(el("conn-url").textContent, this); });
+el("btn-copy-token").addEventListener("click", function () { copyText(el("conn-token").textContent, this); });
+
+refresh();
+setInterval(refresh, 4000);
+</script>
+{% endblock %}

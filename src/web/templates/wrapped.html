@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+{% block title %}年度报告 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">📊 年度报告</h2>
+<p style="color:#8fb9a6;font-size:12px;margin:0 0 20px 0">Spotify Wrapped 风格年度数据总结；可限定单个会话做深度分析</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:1"><label>年份</label><input id="cfg-year" type="number" value="2026" min="2011" max="2030"></div>
+    <div style="flex:1"><label>账号</label><input id="cfg-account" placeholder="wxid (可选)"></div>
+    <div style="flex:2"><label>限定会话（可选）</label><input id="cfg-chat" placeholder="留空=全局；填群名/备注/wxid"></div>
+    <div><label>&nbsp;</label><button id="btn-load" class="btn btn-primary">加载报告</button></div>
+  </div>
+</div>
+
+<div id="wrapped-content" style="display:none">
+  <div id="cards-container" style="display:flex;flex-direction:column;gap:24px;margin-top:20px"></div>
+</div>
+
+<div id="loading" style="display:none;text-align:center;padding:40px;color:#8fb9a6">加载中...</div>
+{% endblock %}
+{% block scripts %}
+<style>
+/* Wrapped card base */
+.wc { background:#143028; border:1px solid #2f6b54; border-radius:0; padding:24px; }
+.wc h3 { margin:0 0 6px 0; color:#e8f7ee; font-size:18px; }
+.wc .wn { color:#8fb9a6; font-size:13px; margin-bottom:16px; line-height:1.6; }
+.wc-empty { text-align:center; padding:32px 20px; color:#6e7681; }
+.wc-empty .we-icon { font-size:40px; margin-bottom:8px; }
+
+/* Stat pills */
+.stat-row { display:flex; flex-wrap:wrap; gap:12px; margin-bottom:16px; }
+.stat-pill { background:#0a1612; border:1px solid #2f6b54; border-radius:0; padding:14px 18px; flex:1; min-width:100px; }
+.stat-pill .sv { font-size:28px; font-weight:700; color:#e8f7ee; }
+.stat-pill .sl { font-size:11px; color:#8fb9a6; margin-top:2px; }
+
+/* Heatmap */
+.ht-wrap { overflow-x:auto; }
+.ht-grid { display:grid; grid-template-columns:40px repeat(24, 1fr); gap:2px; font-size:10px; }
+.ht-cell { aspect-ratio:1; border-radius:0; min-width:14px; }
+.ht-label { color:#8fb9a6; display:flex; align-items:center; font-size:10px; }
+
+/* Messages pills */
+.msg-card { background:#0a1612; border:1px solid #2f6b54; border-radius:0; padding:12px 16px; margin-bottom:8px; display:flex; align-items:center; gap:12px; }
+.msg-card img { width:36px; height:36px; border-radius:0; }
+.msg-card .mc-body { flex:1; }
+.msg-card .mc-name { color:#e8f7ee; font-size:13px; font-weight:600; }
+.msg-card .mc-detail { color:#8fb9a6; font-size:11px; }
+.msg-card .mc-meta { color:#6e7681; font-size:11px; text-align:right; }
+
+/* Persona badge */
+.persona-badge { display:inline-block; background:linear-gradient(135deg, #6e40c9, #d84242); color:#fff; padding:6px 16px; border-radius:0; font-size:13px; font-weight:600; margin:8px 0; }
+
+/* Emoji grid */
+.emoji-grid { display:flex; flex-wrap:wrap; gap:10px; }
+.emoji-item { background:#0a1612; border:1px solid #2f6b54; border-radius:0; padding:10px 14px; text-align:center; min-width:70px; }
+.emoji-item img { width:40px; height:40px; }
+.emoji-item .ec { font-size:11px; color:#8fb9a6; margin-top:4px; }
+.emoji-item .eicon { font-size:32px; }
+
+/* Keyword cloud */
+.kw-cloud { display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:center; padding:12px 0; }
+
+/* Keyboard */
+.kb-wrap { background:#0a1612; border-radius:0; padding:12px; overflow-x:auto; }
+.kb-row { display:flex; gap:3px; margin-bottom:3px; justify-content:center; }
+.kb-key { min-width:26px; height:28px; border-radius:0; display:flex; align-items:center; justify-content:center; font-size:10px; color:#e8f7ee; font-family:monospace; }
+
+/* Month grid */
+.mo-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; }
+.mo-cell { background:#0a1612; border:1px solid #2f6b54; border-radius:0; padding:14px; text-align:center; }
+.mo-cell .mo-month { font-size:11px; color:#8fb9a6; }
+.mo-cell .mo-name { font-size:14px; color:#e8f7ee; font-weight:600; margin:4px 0; }
+
+/* Bento */
+.bento-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:12px; }
+.bento-cell { background:#0a1612; border:1px solid #2f6b54; border-radius:0; padding:16px; }
+.bento-cell .bv { font-size:24px; font-weight:700; color:#e8f7ee; }
+.bento-cell .bl { font-size:11px; color:#8fb9a6; margin-top:2px; }
+.bento-cell img { width:28px; height:28px; border-radius:0; vertical-align:middle; margin-right:6px; }
+
+@media (max-width:600px) {
+  .bento-grid { grid-template-columns:repeat(2, 1fr); }
+  .mo-grid { grid-template-columns:repeat(3, 1fr); }
+}
+</style>
+
+<script>
+document.getElementById('btn-load').addEventListener('click', () => {
+  const year = document.getElementById('cfg-year').value;
+  const account = document.getElementById('cfg-account').value;
+  const chat = (document.getElementById('cfg-chat') || {}).value || '';
+  const params = new URLSearchParams({ year });
+  if (account) params.set('account', account);
+  if (chat.trim()) params.set('chat', chat.trim());
+
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('wrapped-content').style.display = 'none';
+
+  fetch('/api/wrapped/annual?' + params.toString())
+    .then(r => r.json().then(data => ({ ok: r.ok, data })))
+    .then(({ ok, data }) => {
+      document.getElementById('loading').style.display = 'none';
+      if (!ok || data.error) {
+        alert('加载失败: ' + (data.error || '未知错误'));
+        return;
+      }
+      const container = document.getElementById('cards-container');
+      container.innerHTML = '';
+      if (data.chatDisplayName) {
+        const banner = document.createElement('div');
+        banner.className = 'wc';
+        banner.innerHTML = '<h3>会话深度分析</h3><div class="wn">限定：'
+          + esc(data.chatDisplayName)
+          + (data.chat ? '（' + esc(data.chat) + '）' : '')
+          + ' · ' + esc(String(data.year)) + ' 年</div>';
+        container.appendChild(banner);
+      }
+
+      for (const card of (data.cards || [])) {
+        const renderer = RENDERERS[card.kind] || renderFallback;
+        const div = document.createElement('div');
+        div.className = 'wc';
+        div.innerHTML = '<h3>' + esc(card.title) + '</h3>'
+          + (card.narrative ? '<div class="wn">' + esc(card.narrative) + '</div>' : '')
+          + renderer(card.data);
+        container.appendChild(div);
+      }
+
+      document.getElementById('wrapped-content').style.display = 'block';
+    })
+    .catch(err => {
+      document.getElementById('loading').style.display = 'none';
+      alert('加载失败: ' + err.message);
+    });
+});
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function fmt(n) { return n != null ? n.toLocaleString() : '—'; }
+function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '—'; }
+function hms(s) { if (s == null) return '—'; const m = Math.floor(s / 60); return m > 0 ? m + '分' + (s % 60) + '秒' : s + '秒'; }
+
+function renderStatPills(items) {
+  return '<div class="stat-row">' + items.map(function(i) {
+    return '<div class="stat-pill"><div class="sv">' + i.v + '</div><div class="sl">' + i.l + '</div></div>';
+  }).join('') + '</div>';
+}
+
+function renderHeatmap(wl, hl, matrix) {
+  let max = 1;
+  for (let r = 0; r < 7; r++) for (let c = 0; c < 24; c++) max = Math.max(max, matrix[r][c]);
+  let h = '<div class="ht-wrap"><div class="ht-grid">';
+  h += '<div class="ht-label"></div>';
+  for (let c = 0; c < 24; c++) h += '<div class="ht-label" style="justify-content:center">' + hl[c] + '</div>';
+  for (let r = 0; r < 7; r++) {
+    h += '<div class="ht-label">' + wl[r] + '</div>';
+    for (let c = 0; c < 24; c++) {
+      const v = matrix[r][c];
+      const alpha = max > 0 ? v / max : 0;
+      const color = alpha === 0 ? '#143028' : 'rgb(' + Math.round(30 + 180 * alpha) + ',' + Math.round(130 + 30 * alpha) + ',' + Math.round(255 - 100 * alpha) + ')';
+      h += '<div class="ht-cell" style="background:' + color + '" title="' + wl[r] + ' ' + hl[c] + ': ' + v + '条"></div>';
+    }
+  }
+  h += '</div></div>';
+  return h;
+}
+
+function renderContactCard(c, label) {
+  if (!c) return '';
+  return '<div class="msg-card">'
+    + (c.avatarUrl ? '<img src="' + esc(c.avatarUrl) + '" onerror="this.style.display=\'none\'">' : '')
+    + '<div class="mc-body"><div class="mc-name">' + esc(c.displayName || c.maskedName || '?') + '</div>'
+    + '<div class="mc-detail">' + esc(label) + '</div></div>'
+    + '<div class="mc-meta">' + fmt(c.messages || c.stickerCount || c.count) + '</div></div>';
+}
+
+function renderMessageMoment(m, label) {
+  if (!m) return '';
+  return '<div class="msg-card">'
+    + (m.avatarUrl ? '<img src="' + esc(m.avatarUrl) + '" onerror="this.style.display=\'none\'">' : '')
+    + '<div class="mc-body"><div class="mc-name">' + esc(m.displayName || m.maskedName || '?') + '</div>'
+    + '<div class="mc-detail">' + esc(label) + ': ' + esc(m.date) + ' ' + esc(m.time) + '</div>'
+    + (m.content ? '<div class="mc-detail" style="margin-top:2px;color:#6e7681">' + esc(m.content) + '</div>' : '')
+    + '</div></div>';
+}
+
+// ── Card Renderers ──
+
+const RENDERERS = {
+
+'global/overview': function(d) {
+  let h = renderStatPills([
+    {v: fmt(d.totalMessages), l: '发消息'},
+    {v: d.activeDays, l: '活跃天数'},
+    {v: fmt(d.messagesPerDay != null ? d.messagesPerDay.toFixed(0) : '—'), l: '日均消息'},
+    {v: fmt(d.sentMediaCount), l: '图片/视频'},
+    {v: fmt(d.sentStickerCount), l: '表情包'},
+    {v: d.mostActiveHour != null ? d.mostActiveHour + ':00' : '—', l: '最活跃时段'},
+    {v: d.mostActiveWeekdayName || '—', l: '最活跃星期'},
+    {v: fmt(d.addedFriends), l: '新增好友'},
+  ]);
+  if (d.topPhrase) {
+    h += '<div style="margin-bottom:12px"><span style="color:#8fb9a6;font-size:11px">年度口头禅 </span>'
+      + '<span style="color:#e8f7ee;font-size:16px;font-weight:600">"' + esc(d.topPhrase.phrase) + '"</span>'
+      + '<span style="color:#8fb9a6;font-size:12px"> ×' + d.topPhrase.count + '</span></div>';
+  }
+  if (d.topContact) h += renderContactCard(d.topContact, '聊天最多的人');
+  if (d.topGroup) h += renderContactCard(d.topGroup, '最活跃的群');
+  if (d.highlight) h += '<div style="margin-top:8px;color:#8fb9a6;font-size:12px">' + esc(d.highlight.action) + ' ' + esc(d.highlight.date) + '</div>';
+  if (d.annualHeatmap && d.annualHeatmap.dailyCounts) {
+    // Mini calendar strip
+    const counts = d.annualHeatmap.dailyCounts;
+    const m = Math.max.apply(null, counts) || 1;
+    h += '<div style="margin-top:12px;display:flex;gap:1px;flex-wrap:wrap">';
+    for (let i = 0; i < counts.length; i++) {
+      const a = counts[i] / m;
+      const c = 'rgb(' + Math.round(30 + 200 * a) + ',' + Math.round(130 + 30 * a) + ',' + Math.round(255 - 140 * a) + ')';
+      h += '<div style="width:10px;height:10px;border-radius:0;background:' + c + '" title="' + d.annualHeatmap.startDate + ' +' + i + 'd: ' + counts[i] + '"></div>';
+    }
+    h += '</div>';
+  }
+  return h;
+},
+
+'time/weekday_hour_heatmap': function(d) {
+  if (!d.matrix || !d.totalMessages) return '<div class="wc-empty"><div class="we-icon">⏰</div><div>今年没有聊天数据</div></div>';
+  let h = '<div style="margin-bottom:10px;color:#8fb9a6;font-size:12px">共 ' + fmt(d.totalMessages) + ' 条消息</div>';
+  h += renderHeatmap(d.weekdayLabels, d.hourLabels, d.matrix);
+  if (d.earliestSent) h += renderMessageMoment(d.earliestSent, '最早消息');
+  if (d.latestSent) h += renderMessageMoment(d.latestSent, '最晚消息');
+  if (d.yearFirstSent) h += renderMessageMoment(d.yearFirstSent, '年度首发');
+  if (d.yearLastSent) h += renderMessageMoment(d.yearLastSent, '年度收官');
+  return h;
+},
+
+'text/message_chars': function(d) {
+  let h = renderStatPills([
+    {v: fmt(d.sentChars), l: '发送字数'},
+    {v: fmt(d.receivedChars), l: '接收字数'},
+    {v: d.sentBook ? d.sentBook.book : '—', l: '相当于'},
+  ]);
+  if (d.sentBook) h += '<div style="color:#e8f7ee;font-size:13px;margin-bottom:12px">' + esc(d.sentBook.text) + '</div>';
+  if (d.receivedA4) h += '<div style="color:#8fb9a6;font-size:12px;margin-bottom:12px">收到的字可铺满 ' + d.receivedA4.a4.sheets + ' 张A4纸，堆起来约 ' + d.receivedA4.a4.heightText + '</div>';
+  if (d.keyboard && d.keyboard.keyHits) {
+    const kh = d.keyboard.keyHits;
+    const kmax = Math.max.apply(null, Object.values(kh)) || 1;
+    const rows = [
+      '`1234567890-=',
+      ' qwertyuiop[]\\',
+      ' asdfghjkl;\'',
+      ' zxcvbnm,./'
+    ];
+    h += '<div class="kb-wrap">';
+    for (let ri = 0; ri < rows.length; ri++) {
+      h += '<div class="kb-row">';
+      for (let ci = 0; ci < rows[ri].length; ci++) {
+        const key = rows[ri][ci];
+        if (key === ' ') continue;
+        const v = kh[key] || 0;
+        const a = v / kmax;
+        const bg = a > 0 ? 'rgb(' + Math.round(30 + 200 * a) + ',' + Math.round(130 + 30 * a) + ',' + Math.round(255 - 100 * a) + ')' : 'transparent';
+        h += '<div class="kb-key" style="background:' + bg + '" title="' + key + ': ' + v + '次">' + esc(key) + '</div>';
+      }
+      h += '</div>';
+    }
+    h += '<div style="text-align:center;margin-top:8px;font-size:11px;color:#8fb9a6">键盘热力图 — 共击键 ' + fmt(d.keyboard.totalKeyHits) + ' 次' + (d.keyboard.spaceHits ? '，空格 ' + fmt(d.keyboard.spaceHits) + ' 次' : '') + '</div>';
+    h += '</div>';
+  }
+  return h;
+},
+
+'chat/reply_speed': function(d) {
+  if (!d.replyEvents && !(d.fastestReplySeconds > 0)) {
+    return '<div class="wc-empty"><div class="we-icon">⚡</div><div>今年还没有可统计的回复记录（或尚未构建搜索索引）</div><div style="font-size:11px;margin-top:4px;color:#5a8574">需要 FTS5 全文搜索索引支持</div></div>';
+  }
+  let h = renderStatPills([
+    {v: fmt(d.replyEvents), l: '回复事件'},
+    {v: d.fastestReplySeconds ? hms(d.fastestReplySeconds) : '—', l: '最快回复'},
+    {v: d.longestReplySeconds ? hms(d.longestReplySeconds) : '—', l: '最慢回复'},
+    {v: d.replyStats ? hms(Math.round(d.replyStats.p50Seconds)) : '—', l: '中位回复速度'},
+  ]);
+  if (d.bestBuddy) h += renderContactCard(d.bestBuddy, '年度最佳聊天搭档');
+  if (d.fastest) h += renderContactCard(d.fastest, '秒回冠军 — ' + hms(d.fastest.seconds));
+  if (d.slowest) h += renderContactCard(d.slowest, '最慢回复 — ' + hms(d.slowest.seconds));
+  return h;
+},
+
+'chat/monthly_best_friends_wall': function(d) {
+  const months = d.months || [];
+  const hasAny = months.some(function(m) { return m.winner; });
+  if (!hasAny) {
+    return '<div class="wc-empty"><div class="we-icon">📅</div><div>今年还没有可统计的月度好友数据（或尚未构建搜索索引）</div><div style="font-size:11px;margin-top:4px;color:#5a8574">需要 FTS5 全文搜索索引支持</div></div>';
+  }
+  const labels = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  let h = '<div class="mo-grid">';
+  for (let i = 0; i < 12; i++) {
+    const m = months[i];
+    const w = m ? m.winner : null;
+    h += '<div class="mo-cell">'
+      + '<div class="mo-month">' + labels[i] + '</div>'
+      + (w ? '<img src="' + esc(w.avatarUrl || '') + '" style="width:36px;height:36px;border-radius:0;margin:6px 0" onerror="this.style.display=\'none\'">'
+           + '<div class="mo-name">' + esc(w.displayName || w.maskedName || '?') + '</div>'
+           + '<div style="font-size:11px;color:#8fb9a6">' + fmt(w.messages || w.totalMessages) + '条</div>'
+         : '<div style="color:#6e7681;font-size:12px;padding:12px 0">' + (m && m.reason === 'fts5_unavailable' ? '暂无数据' : '无') + '</div>')
+      + '</div>';
+  }
+  h += '</div>';
+  if (d.summary && d.summary.topChampion) {
+    h += '<div style="margin-top:12px;color:#8fb9a6;font-size:12px;text-align:center">'
+      + esc(d.summary.topChampion.displayName || '') + ' 拿下 ' + d.summary.topChampion.monthsWon + ' 个月</div>';
+  }
+  return h;
+},
+
+'emoji/annual_universe': function(d) {
+  let h = renderStatPills([
+    {v: fmt(d.sentStickerCount), l: '表情包'},
+    {v: d.uniqueStickerTypeCount, l: '不重复种类'},
+    {v: d.stickerShareOfSentMessages != null ? pct(d.stickerShareOfSentMessages) : '—', l: '占消息比'},
+    {v: fmt(d.newStickerCountThisYear), l: '今年新表情'},
+  ]);
+  if (d.persona) {
+    h += '<div class="persona-badge">' + esc(d.persona.label) + '</div>';
+    h += '<div style="color:#8fb9a6;font-size:12px;margin:4px 0 12px">' + esc(d.persona.reason) + '</div>';
+  }
+  if (d.topStickers && d.topStickers.length) {
+    h += '<div style="font-size:12px;color:#8fb9a6;margin-bottom:6px">最常发表情</div><div class="emoji-grid">';
+    for (const s of d.topStickers) {
+      h += '<div class="emoji-item">'
+        + (s.emojiUrl ? '<img src="' + esc(s.emojiUrl) + '" onerror="this.style.display=\'none\'" title="' + esc(s.emojiLabel || s.md5) + '">' : '')
+        + '<div class="ec">×' + fmt(s.count) + '</div></div>';
+    }
+    h += '</div>';
+  }
+  if (d.topWechatEmojis && d.topWechatEmojis.length) {
+    h += '<div style="font-size:12px;color:#8fb9a6;margin:12px 0 6px">最爱小黄脸</div><div class="emoji-grid">';
+    for (const e of d.topWechatEmojis) {
+      h += '<div class="emoji-item">'
+        + (e.assetPath ? '<img src="' + esc(e.assetPath) + '" style="width:32px;height:32px" onerror="this.style.display=\'none\'">' : '<span class="eicon">' + esc(e.key || '') + '</span>')
+        + '<div class="ec">×' + fmt(e.count) + '</div></div>';
+    }
+    h += '</div>';
+  }
+  if (d.topUnicodeEmojis && d.topUnicodeEmojis.length) {
+    h += '<div style="font-size:12px;color:#8fb9a6;margin:12px 0 6px">最爱 Emoji</div><div class="emoji-grid">';
+    for (const e of d.topUnicodeEmojis) {
+      h += '<div class="emoji-item"><span style="font-size:32px">' + esc(e.emoji) + '</span><div class="ec">×' + fmt(e.count) + '</div></div>';
+    }
+    h += '</div>';
+  }
+  if (d.topBattlePartner) h += '<div style="margin-top:12px">' + renderContactCard(d.topBattlePartner, '表情包互动最多') + '</div>';
+  return h;
+},
+
+'text/keywords_wordcloud': function(d) {
+  if (!d.keywords || !d.keywords.length) return '<div class="wc-empty"><div class="we-icon">💬</div><div>暂无关键词数据</div></div>';
+  let h = '<div class="kw-cloud">';
+  for (const kw of d.keywords) {
+    const size = Math.round(12 + kw.weight * 28);
+    const alpha = 0.4 + kw.weight * 0.6;
+    h += '<span style="font-size:' + size + 'px;color:rgba(167,139,250,' + alpha.toFixed(2) + ');padding:2px 6px;display:inline-block" title="' + esc(kw.word) + ': ' + kw.count + '次">' + esc(kw.word) + '</span>';
+  }
+  h += '</div>';
+  if (d.topKeyword) {
+    h += '<div style="text-align:center;margin-top:12px;color:#8fb9a6;font-size:12px">年度关键词: <span style="color:#e8f7ee;font-weight:600">' + esc(d.topKeyword.word) + '</span> (' + d.topKeyword.count + '次)</div>';
+  }
+  if (d.examples && d.examples.length) {
+    h += '<div style="margin-top:12px;font-size:11px;color:#6e7681;max-height:200px;overflow-y:auto">';
+    for (const ex of d.examples.slice(0, 5)) {
+      h += '<div style="margin-bottom:4px"><span style="color:#a78bfa">' + esc(ex.word) + '</span> ×' + ex.count;
+      if (ex.messages) for (const m of ex.messages.slice(0, 2)) h += '<div style="padding-left:12px;color:#5a8574">' + esc(m) + '</div>';
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+  return h;
+},
+
+'global/bento_summary': function(d) {
+  const s = d.snapshot || {};
+  let h = '<div class="bento-grid">';
+  h += '<div class="bento-cell"><div class="bv">' + fmt(s.totalMessages) + '</div><div class="bl">年度总消息</div></div>';
+  h += '<div class="bento-cell"><div class="bv">' + (s.messagesPerDay != null ? s.messagesPerDay.toFixed(0) : '—') + '</div><div class="bl">日均消息</div></div>';
+  h += '<div class="bento-cell"><div class="bv">' + fmt(s.sentChars) + '</div><div class="bl">发送总字数</div></div>';
+  h += '<div class="bento-cell"><div class="bv">' + fmt(s.sentStickerCount) + '</div><div class="bl">表情包</div></div>';
+  h += '<div class="bento-cell"><div class="bv">' + fmt(s.addedFriends) + '</div><div class="bl">新增好友</div></div>';
+  h += '<div class="bento-cell"><div class="bv">' + (s.mostActiveHour != null ? s.mostActiveHour + ':00' : '—') + '</div><div class="bl">常活跃时段</div></div>';
+  if (s.topPhrase) h += '<div class="bento-cell"><div class="bv" style="font-size:16px">"' + esc(s.topPhrase.phrase) + '"</div><div class="bl">年度口头禅</div></div>';
+  if (s.topUnicodeEmoji) h += '<div class="bento-cell"><div class="bv">' + esc(s.topUnicodeEmoji) + '</div><div class="bl">最爱 Emoji ×' + fmt(s.topUnicodeEmojiCount) + '</div></div>';
+  if (s.topSticker && s.topSticker.imageUrl) h += '<div class="bento-cell"><img src="' + esc(s.topSticker.imageUrl) + '" onerror="this.style.display=\'none\'"><div class="bl">最常用表情 ×' + fmt(s.topSticker.count) + '</div></div>';
+  if (s.topGroup) h += '<div class="bento-cell"><img src="' + esc(s.topGroup.avatarUrl || '') + '" onerror="this.style.display=\'none\'"><div class="bv" style="font-size:14px">' + esc(s.topGroup.displayName || s.topGroup.maskedName || '?') + '</div><div class="bl">最活跃群</div></div>';
+  if (s.bestBuddy) h += '<div class="bento-cell"><img src="' + esc(s.bestBuddy.avatarUrl || '') + '" onerror="this.style.display=\'none\'"><div class="bv" style="font-size:14px">' + esc(s.bestBuddy.displayName || s.bestBuddy.maskedName || '?') + '</div><div class="bl">最佳拍档</div></div>';
+  h += '</div>';
+  if (s.weekdayHourMatrix && s.weekdayLabels && s.hourLabels) {
+    h += '<div style="margin-top:16px"><div style="font-size:12px;color:#8fb9a6;margin-bottom:8px">活动热力</div>';
+    h += renderHeatmap(s.weekdayLabels, s.hourLabels, s.weekdayHourMatrix);
+    h += '</div>';
+  }
+  return h;
+}
+
+};
+
+function renderFallback(cardData) {
+  return '<pre style="font-size:11px;color:#8fb9a6;white-space:pre-wrap;max-height:400px;overflow:auto">'
+    + esc(JSON.stringify(cardData, null, 2)) + '</pre>';
+}
+</script>
+{% endblock %}

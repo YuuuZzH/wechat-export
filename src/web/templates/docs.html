@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}使用说明 — WeChat Export{% endblock %}
+{% block head %}
+<style>
+.docs-wrap {
+  max-width: 880px;
+  margin: 0 auto;
+  background: var(--px-panel);
+  border: var(--border-w) solid var(--px-border);
+  border-radius: var(--radius);
+  box-shadow: var(--elev);
+  padding: 28px 32px 48px;
+}
+.docs-wrap h1, .docs-wrap h2, .docs-wrap h3 {
+  font-family: var(--font-display);
+  color: var(--px-text);
+  margin: 1.4em 0 0.55em;
+  line-height: 1.35;
+}
+.docs-wrap h1 { font-size: 1.7rem; margin-top: 0; color: var(--px-gold); }
+.docs-wrap h2 { font-size: 1.25rem; border-bottom: 2px solid var(--px-border); padding-bottom: 0.3em; color: var(--px-lime); }
+.docs-wrap h3 { font-size: 1.05rem; }
+.docs-wrap p, .docs-wrap li { color: var(--px-text); font-size: 14px; line-height: 1.7; }
+.docs-wrap a { color: var(--px-orange); }
+.docs-wrap code {
+  background: var(--px-bg-2);
+  border: 1px solid var(--px-border);
+  border-radius: var(--radius-sm);
+  padding: 0 5px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.docs-wrap pre {
+  background: var(--px-bg);
+  border: 2px solid var(--px-border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  overflow-x: auto;
+  box-shadow: var(--elev-sm);
+}
+.docs-wrap pre code { border: none; background: transparent; padding: 0; }
+.docs-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 20px;
+  font-size: 13px;
+}
+.docs-wrap th, .docs-wrap td {
+  border: 1px solid var(--px-border);
+  padding: 8px 10px;
+  text-align: left;
+}
+.docs-wrap th { background: var(--px-panel-2); }
+.docs-wrap img {
+  max-width: 100%;
+  height: auto;
+  border: 2px solid var(--px-border);
+  border-radius: var(--radius-sm);
+  margin: 8px 0 4px;
+  box-shadow: var(--elev-sm);
+}
+.docs-wrap blockquote {
+  margin: 12px 0;
+  padding: 8px 14px;
+  border-left: 4px solid var(--px-orange);
+  background: var(--px-panel-2);
+  color: var(--px-muted);
+}
+.docs-wrap hr { border: none; border-top: 2px solid var(--px-border); margin: 24px 0; }
+.docs-meta {
+  font-size: 13px;
+  color: var(--px-muted);
+  margin-bottom: 18px;
+}
+</style>
+{% endblock %}
+{% block content %}
+<article class="docs-wrap">
+  <p class="docs-meta">本页内容与仓库 <code>README.md</code> 同步 · 维护者 yuuu · <a href="https://github.com/YuuuZzH/wechat-export" target="_blank" rel="noopener">GitHub</a></p>
+  {{ body_html | safe }}
+</article>
+{% endblock %}

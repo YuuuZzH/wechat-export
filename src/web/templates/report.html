@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}综合报告 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 class="page-title"><span class="px-icon px-icon-doc" style="display:inline-grid;vertical-align:middle;margin:0 8px 0 0;width:28px;height:28px;box-shadow:2px 2px 0 var(--px-shadow)"></span>综合报告</h2>
+<p class="page-desc" style="margin:0 0 20px 0">按年份生成 HTML 分析报告：概览卡片 + 饼图 + 趋势 + 热力图（本地打开，无需联网）</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:1"><label>年份（留空或填 0 = 全部时间）</label><input id="cfg-year" type="number" value="2026" min="0" max="2030"></div>
+    <div><label>&nbsp;</label><button id="btn-run" class="btn btn-primary">生成报告</button></div>
+  </div>
+</div>
+
+<div id="progress-container" class="progress-panel" style="display:none">
+  <div class="progress-bar-outer"><div id="progress-bar" class="progress-bar-inner" style="width:0%"></div></div>
+  <div id="progress-detail" class="progress-detail">等待开始...</div>
+  <div id="log-console" class="log-console" style="margin-top:12px"></div>
+</div>
+
+<div id="result-container" class="result-panel" style="display:none">
+  <h3>✓ 报告生成完成</h3>
+  <div id="result-content"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/sse_progress.js') }}"></script>
+<script src="{{ url_for('static', filename='js/wizard.js') }}"></script>
+<script>
+new WizardPage({
+  runBtnId: 'btn-run',
+  apiUrl: '/api/export/report',
+  steps: ['analyze'],
+  getBody: () => ({
+    year: parseInt(document.getElementById('cfg-year').value, 10) || 0,
+  }),
+});
+</script>
+{% endblock %}

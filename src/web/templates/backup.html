@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}一键备份 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">📦 一键备份</h2>
+<p style="color:#8fb9a6;font-size:12px;margin:0 0 20px 0">扫描 → 解密 → 迁移媒体 → 构建索引</p>
+
+<div class="steps-bar" id="steps-bar">
+  <span class="step-item active" data-stage="scan"><span>①</span> 扫描账号</span>
+  <span class="step-arrow">→</span>
+  <span class="step-item" data-stage="decrypt"><span>②</span> 解密数据库</span>
+  <span class="step-arrow">→</span>
+  <span class="step-item" data-stage="migrate"><span>③</span> 迁移媒体</span>
+  <span class="step-arrow">→</span>
+  <span class="step-item" data-stage="index"><span>④</span> 构建索引</span>
+</div>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:2"><label>微信数据目录 (db_storage)</label><input id="cfg-db-dir" placeholder="例如: D:\xwechat_files\wxid_xxx\db_storage"></div>
+    <div style="flex:2"><label>备份输出目录</label><input id="cfg-output" placeholder="例如: D:\WeChat_Backup\2026-05-18"></div>
+    <div><label>&nbsp;</label><button id="btn-run" class="btn btn-primary">开始备份</button></div>
+  </div>
+  <div class="form-row" style="margin-top:8px">
+    <div style="flex:1"><label>起始日期</label><input type="date" id="cfg-date-from"></div>
+    <div style="flex:1"><label>截止日期</label><input type="date" id="cfg-date-to"></div>
+    <div style="flex:1"><label>快速选择</label>
+      <select id="cfg-days" style="width:100%;padding:8px 10px;border:1px solid #2f6b54;border-radius:0;background:#0a1612;color:#e8f7ee;font-size:13px">
+        <option value="30" selected>最近 30 天</option>
+        <option value="7">最近 7 天</option>
+        <option value="90">最近 90 天</option>
+        <option value="365">最近 1 年</option>
+        <option value="0">全部记录</option>
+      </select>
+    </div>
+  </div>
+  <div style="margin-top:8px">
+    <button id="btn-detect" class="btn btn-secondary" style="font-size:11px">自动检测微信目录</button>
+    <button id="btn-deep" class="btn btn-secondary" style="font-size:11px">🔍 深度搜索</button>
+    <button id="btn-use-dir" class="btn btn-secondary" style="font-size:11px">使用该目录</button>
+  </div>
+  <div class="form-row" style="margin-top:8px">
+    <div style="flex:4"><label>检测到的数据目录（选择即填入上面的输入框）</label>
+      <select id="cfg-db-dir-list" style="width:100%;padding:8px 10px;border:1px solid #2f6b54;border-radius:0;background:#0a1612;color:#e8f7ee;font-size:13px"></select></div>
+  </div>
+  <div id="dir-hint" style="color:#8fb9a6;font-size:12px;margin-top:8px;line-height:1.8">
+    💡 找不到数据目录时点「🔍 深度搜索」（最长 45 秒）；也可以在微信「设置 → 文件管理 → 打开文件夹」里查看，
+    把 <code>xwechat_files\&lt;账号&gt;\db_storage</code> 粘贴到输入框后点「使用该目录」。</div>
+</div>
+
+<div id="progress-container" class="progress-panel" style="display:none">
+  <div class="progress-bar-outer"><div id="progress-bar" class="progress-bar-inner" style="width:0%"></div></div>
+  <div id="progress-detail" class="progress-detail">等待开始...</div>
+  <div id="log-console" class="log-console" style="margin-top:12px"></div>
+</div>
+
+<div id="result-container" class="result-panel" style="display:none">
+  <h3 id="result-title">✓ 备份完成</h3>
+  <div id="result-content"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/sse_progress.js') }}"></script>
+<script src="{{ url_for('static', filename='js/wizard.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dbdir.js') }}"></script>
+<script>
+const page = new WizardPage({
+  formId: 'wizard-form',
+  runBtnId: 'btn-run',
+  apiUrl: '/api/backup/run',
+  steps: ['scan', 'decrypt', 'migrate', 'index'],
+  getBody: () => {
+    const dateFrom = document.getElementById('cfg-date-from').value;
+    const dateTo = document.getElementById('cfg-date-to').value;
+    const days = parseInt(document.getElementById('cfg-days').value);
+    const body = {
+      db_dir: document.getElementById('cfg-db-dir').value,
+      output_dir: document.getElementById('cfg-output').value,
+    };
+    if (dateFrom || dateTo) {
+      if (dateFrom) body.start_date = dateFrom;
+      if (dateTo) body.end_date = dateTo;
+    } else {
+      body.days = days;
+    }
+    return body;
+  },
+});
+
+// Override showResult to display stats
+const origShowResult = page.showResult.bind(page);
+page.showResult = function(result) {
+  origShowResult(result);
+  const stats = result.stats || result;
+  const hasErrors = stats.errors && stats.errors.length > 0;
+  const titleEl = document.getElementById('result-title');
+  if (titleEl) {
+    titleEl.textContent = hasErrors ? '✗ 备份失败' : '✓ 备份完成';
+    titleEl.style.color = hasErrors ? '#ff5a6e' : '';
+  }
+  let html = '<dl class="result-stats">';
+  if (stats.decrypted !== undefined) html += '<dt>解密数据库</dt><dd>' + stats.decrypted + ' 个</dd>';
+  if (stats.migrated) {
+    html += '<dt>媒体文件</dt><dd>硬链接 ' + (stats.migrated.hardlinked || 0) + ' | 复制 ' + (stats.migrated.copied || 0) + ' | 跳过 ' + (stats.migrated.skipped || 0) + '</dd>';
+  }
+  if (stats.indexed) html += '<dt>搜索索引</dt><dd>' + stats.indexed + '</dd>';
+  if (hasErrors) {
+    html += '<dt style="color:#ff5a6e">错误</dt><dd style="color:#ff5a6e">' + stats.errors.join('<br>') + '</dd>';
+  }
+  html += '</dl>';
+  if (!hasErrors) {
+    html += '<p style="margin-top:12px"><a href="/chat" class="btn btn-primary" style="display:inline-block;text-decoration:none">打开聊天查看器</a></p>';
+  }
+  document.getElementById('result-content').innerHTML = html;
+};
+
+// Override handleSelect for account selection (not chat selection)
+page.handleSelect = function(data) {
+  this.runBtn.disabled = false;
+  this.progressContainer.style.display = 'none';
+  const matches = data.matches || [];
+  this.showSelectDialog(matches);
+};
+
+// Override showSelectDialog for account selection
+page.showSelectDialog = function(accounts) {
+  let container = document.getElementById('select-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'select-container';
+    container.className = 'select-panel';
+    const progressEl = document.getElementById('progress-container');
+    if (progressEl) {
+      progressEl.parentNode.insertBefore(container, progressEl);
+    } else {
+      document.querySelector('.config-panel').after(container);
+    }
+  }
+  let html = '<h3 style="margin:0 0 4px 0;color:#e94560">检测到多个微信账号</h3>';
+  html += '<p style="color:#8fb9a6;font-size:12px;margin:0 0 16px 0">请选择要备份的账号：</p>';
+  html += '<div class="select-list">';
+  for (const a of accounts) {
+    const wxid = this.escapeHtml(a.wxid);
+    const dbCount = (a.db_count || 0);
+    const sizeStr = (a.size_mb || 0) >= 1024
+      ? (a.size_mb / 1024).toFixed(1) + ' GB'
+      : (a.size_mb || 0).toFixed(0) + ' MB';
+    const mtime = a.mtime ? new Date(a.mtime * 1000).toLocaleString('zh-CN') : '';
+    html += '<div class="select-item" data-dbpath="' + this.escapeHtml(a.db_path) + '">';
+    html += '<div class="select-name">' + wxid + '</div>';
+    html += '<div class="select-meta">';
+    html += '<span>' + dbCount + ' 个消息库</span> · ';
+    html += '<span>' + sizeStr + '</span>';
+    if (mtime) html += ' · <span>最近活动: ' + mtime + '</span>';
+    html += '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+  container.style.display = 'block';
+
+  for (const item of container.querySelectorAll('.select-item')) {
+    item.addEventListener('click', () => {
+      const dbPath = item.dataset.dbpath;
+      container.style.display = 'none';
+      document.getElementById('cfg-db-dir').value = dbPath;
+      // Auto-restart backup with the selected account
+      this.start();
+    });
+  }
+};
+
+// 数据目录选择器：自动检测 / 深度搜索 / 使用该目录（记住到配置）
+const dirPicker = new DbDirPicker({ inputId: 'cfg-db-dir' });
+
+// Auto-detect button — show selection dialog when multiple accounts found
+document.getElementById('btn-detect').addEventListener('click', () => {
+  const sse = new SseProgress('/api/backup/scan', {
+    method: 'POST',
+    body: {},
+    onProgress: (data) => {
+      console.log('Detect progress:', data.detail);
+    },
+    onDone: (data) => {
+      if (data.result && data.result.accounts && data.result.accounts.length) {
+        const accounts = data.result.accounts;
+        if (accounts.length === 1) {
+          document.getElementById('cfg-db-dir').value = accounts[0].db_path;
+        } else {
+          // Multiple accounts — show selection dialog
+          page.showSelectDialog(accounts);
+        }
+      }
+    },
+    onError: (err) => alert('检测失败: ' + err.message),
+  });
+  sse.start();
+});
+</script>
+{% endblock %}

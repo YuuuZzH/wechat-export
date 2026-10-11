@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}WeChat Export — 垃圾清理{% endblock %}
+{% block nav_right %}
+<a href="/" class="nav-link">仪表盘</a>
+<a href="/chat" class="nav-link">聊天查看器</a>
+<a href="/contacts" class="nav-link">通讯录</a>
+{% endblock %}
+{% block content %}
+<div id="cleanup-app">
+  <div id="cleanup-topbar">
+    <div class="cleanup-summary">
+      <span id="cleanup-total-size">分析中...</span>
+      <span id="cleanup-sampling-info" style="font-size:11px;color:#8fb9a6;margin-left:12px"></span>
+      <span id="cleanup-selected-summary" style="display:none"></span>
+    </div>
+    <div class="cleanup-actions">
+      <button class="btn btn-secondary" id="cleanup-refresh-btn" onclick="CleanupStore.emit('refresh')">重新分析</button>
+    </div>
+  </div>
+  <div id="cleanup-filters">
+    <div class="filter-group">
+      <label class="filter-label">时间范围</label>
+      <select id="cleanup-date-preset" class="filter-select">
+        <option value="90">3个月前</option>
+        <option value="180">6个月前</option>
+        <option value="365">1年前</option>
+        <option value="custom">自定义</option>
+      </select>
+      <input type="date" id="cleanup-date-start" class="filter-date" style="display:none" />
+      <span id="cleanup-date-sep" style="display:none;color:#8fb9a6;margin:0 4px">~</span>
+      <input type="date" id="cleanup-date-end" class="filter-date" style="display:none" />
+    </div>
+    <div class="filter-group">
+      <label class="filter-label">消息类型</label>
+      <label class="filter-check"><input type="checkbox" class="cleanup-type-cb" value="3" checked> 图片</label>
+      <label class="filter-check"><input type="checkbox" class="cleanup-type-cb" value="43" checked> 视频</label>
+      <label class="filter-check"><input type="checkbox" class="cleanup-type-cb" value="6" checked> 文件</label>
+    </div>
+  </div>
+  <div id="cleanup-main">
+    <aside id="cleanup-sidebar">
+      <div class="cleanup-sidebar-header">
+        <input type="text" id="cleanup-search" class="cleanup-search-input" placeholder="搜索聊天名称或wxid..." autocomplete="off">
+        <label class="filter-check"><input type="checkbox" id="cleanup-select-all"> 全选/取消全选</label>
+        <span id="cleanup-chat-count"></span>
+      </div>
+      <div class="cleanup-list" id="cleanup-list"></div>
+    </aside>
+    <main id="cleanup-detail">
+      <div class="detail-placeholder">
+        <div class="placeholder-icon">&#x1F5D1;</div>
+        <p>选择左侧聊天查看空间占用详情</p>
+      </div>
+    </main>
+  </div>
+  <div id="cleanup-bottombar" style="display:none">
+    <span id="cleanup-bottombar-text"></span>
+    <button class="btn btn-primary" id="cleanup-preview-btn" disabled>预览删除</button>
+  </div>
+</div>
+
+<!-- Confirm Modal (hidden) -->
+<div id="cleanup-modal-backdrop" style="display:none"></div>
+<div id="cleanup-modal" style="display:none">
+  <div id="cleanup-modal-content"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/component.js') }}"></script>
+<script src="{{ url_for('static', filename='js/cleanup-store.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/cleanup-list.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/cleanup-confirm.js') }}"></script>
+<script src="{{ url_for('static', filename='js/cleanup-app.js') }}"></script>
+{% endblock %}

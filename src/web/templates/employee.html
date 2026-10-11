@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}员工报表 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">👤 员工报表</h2>
+<p style="color:#8fb9a6;font-size:12px;margin:0 0 20px 0">上传员工 Excel 文件，批量匹配微信联系人并导出聊天记录</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:2"><label>员工 Excel 文件</label><input id="cfg-excel" type="file" accept=".xlsx,.xls"></div>
+    <div><label>&nbsp;</label><button id="btn-run" class="btn btn-primary">开始导出</button></div>
+  </div>
+</div>
+
+<div id="progress-container" class="progress-panel" style="display:none">
+  <div class="progress-bar-outer"><div id="progress-bar" class="progress-bar-inner" style="width:0%"></div></div>
+  <div id="progress-detail" class="progress-detail">等待开始...</div>
+  <div id="log-console" class="log-console" style="margin-top:12px"></div>
+</div>
+
+<div id="result-container" class="result-panel" style="display:none">
+  <h3>✓ 员工报表导出完成</h3>
+  <div id="result-content"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+// Employee export uses FormData (file upload)
+document.getElementById('btn-run').addEventListener('click', () => {
+  const fileInput = document.getElementById('cfg-excel');
+  const file = fileInput.files[0];
+  if (!file) { alert('请选择 Excel 文件'); return; }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+  document.getElementById('progress-container').style.display = 'block';
+  document.getElementById('result-container').style.display = 'none';
+
+  fetch('/api/export/employee', { method: 'POST', body: formData })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        document.getElementById('result-content').innerHTML =
+          '<pre style="font-size:11px;max-height:300px;overflow:auto">' + (data.output || '') + '</pre>';
+      } else {
+        document.getElementById('result-content').innerHTML =
+          '<p style="color:#ff5a6e">' + (data.error || '未知错误') + '</p>';
+      }
+      document.getElementById('result-container').style.display = 'block';
+      btn.disabled = false;
+    })
+    .catch(err => {
+      alert('导出失败: ' + err.message);
+      btn.disabled = false;
+    });
+});
+</script>
+{% endblock %}

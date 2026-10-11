@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block title %}聊天查看器 — WeChat Export{% endblock %}
+{% block head %}
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script type="importmap">
+{
+  "imports": {
+    "@xenova/transformers": "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js"
+  }
+}
+</script>
+<script type="module">
+import { pipeline, env } from '@xenova/transformers';
+
+// 模型文件由本地 Flask 路由提供：/api/asr/model/<model>/<file>
+// （用户目录 %LOCALAPPDATA%\WeChatEXP\models 优先，其次程序内置的 static/models）
+env.remoteHost = window.location.origin;
+env.remotePathTemplate = '/api/asr/model/{model}';
+
+// 模型可选（localStorage 记忆）；默认 base，中文识别明显好于 tiny
+const ASR_MODEL_KEY = 'wechat_exp_asr_model';
+const ASR_DEFAULT_MODEL = 'Xenova/whisper-base';
+function _getModel() {
+  try { return localStorage.getItem(ASR_MODEL_KEY) || ASR_DEFAULT_MODEL; } catch (e) { return ASR_DEFAULT_MODEL; }
+}
+function _setModel(m) {
+  try { localStorage.setItem(ASR_MODEL_KEY, m); } catch (e) { /* ignore */ }
+  _transcriber = null;
+  _loading = false;
+  _loadResolvers = [];
+}
+let _transcriber = null;
+let _loading = false;
+let _loadResolvers = [];
+
+async function _getTranscriber(onProgress) {
+  if (_transcriber) return _transcriber;
+  if (_loading) {
+    return new Promise((resolve) => { _loadResolvers.push(resolve); });
+  }
+  _loading = true;
+  try {
+    onProgress && onProgress('正在加载语音识别模型...');
+    _transcriber = await pipeline('automatic-speech-recognition', _getModel(), {
+      quantized: true,
+      progress_callback: (p) => {
+        if (p.status === 'progress' && p.file) {
+          const pct = p.progress ? Math.round(p.progress) : 0;
+          onProgress && onProgress(`加载模型: ${p.file} ${pct}%`);
+        }
+      }
+    });
+    for (const r of _loadResolvers) r(_transcriber);
+    _loadResolvers = [];
+    return _transcriber;
+  } catch (e) {
+    _loading = false;
+    for (const r of _loadResolvers) r(null);
+    _loadResolvers = [];
+    throw e;
+  }
+}
+
+let _asrSettings = null;
+let _asrSettingsAt = 0;
+async function _getAsrSettings(force) {
+  if (!force && _asrSettings && (Date.now() - _asrSettingsAt) < 30000) return _asrSettings;
+  try {
+    const r = await fetch('/api/settings/asr');
+    _asrSettings = await r.json();
+    _asrSettingsAt = Date.now();
+  } catch (e) { /* 用默认值 */ }
+  return _asrSettings || { engine: 'local', language: 'zh', simplify: true };
+}
+
+async function _toSimplified(text) {
+  try {
+    const r = await fetch('/api/asr/simplify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text }),
+    });
+    const d = await r.json();
+    return d.text || text;
+  } catch (e) { return text; }
+}
+
+async function _modelStatus() {
+  try {
+    const r = await fetch('/api/asr/status?model=' + encodeURIComponent(_getModel()));
+    return await r.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+function _installModel(onProgress) {
+  return new Promise((resolve, reject) => {
+    fetch('/api/asr/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: _getModel() }),
+    }).then((resp) => {
+      if (!resp.body) { reject(new Error('浏览器不支持流式进度')); return; }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buf = '';
+      function pump() {
+        return reader.read().then((res) => {
+          if (res.done) return;
+          buf += decoder.decode(res.value, { stream: true });
+          const parts = buf.split('\n\n');
+          buf = parts.pop();
+          parts.forEach((block) => {
+            let ev = 'message'; let data = '';
+            block.split('\n').forEach((line) => {
+              if (line.indexOf('event: ') === 0) ev = line.slice(7).trim();
+              else if (line.indexOf('data: ') === 0) data += line.slice(6);
+            });
+            if (!data) return;
+            let obj = null;
+            try { obj = JSON.parse(data); } catch (e) { return; }
+            if (ev === 'progress') { onProgress && onProgress(obj.detail || '', obj.progress || 0); }
+            else if (ev === 'done') { _transcriber = null; _loading = false; resolve(obj.result || {}); }
+            else if (ev === 'error') { reject(new Error(obj.message || '下载失败')); }
+          });
+          return pump();
+        });
+      }
+      return pump();
+    }).catch(reject);
+  });
+}
+
+window.WhisperTranscriber = {
+  get modelId() { return _getModel(); },
+  setModel: _setModel,
+  defaultModel: ASR_DEFAULT_MODEL,
+  get loaded() { return !!_transcriber; },
+  status: _modelStatus,
+  install: _installModel,
+  reset() { _transcriber = null; _loading = false; _loadResolvers = []; },
+  settings: _getAsrSettings,
+
+  async transcribe(audioUrl, onProgress, options) {
+    const cfg = await _getAsrSettings();
+    const t = await _getTranscriber(onProgress);
+    if (!t) throw new Error('模型加载失败');
+    // 生成参数：语言必须显式指定，否则长语音会崩（实测 32 秒语音不指定
+    // language 时几乎只输出几个字）；no_repeat_* 防止一句话复读几十遍
+    const opts = {
+      chunk_length_s: 30,
+      stride_length_s: 5,
+      no_repeat_ngram_size: 3,
+      repetition_penalty: 1.15,
+      max_new_tokens: 448,
+    };
+    const lang = (cfg && cfg.language) || 'zh';
+    if (lang && lang !== 'auto') {
+      opts.language = lang;
+      opts.task = 'transcribe';
+    }
+    Object.assign(opts, options || {});
+    const result = await t(audioUrl, opts);
+    let text = (result.text || '').trim();
+    if (text && cfg && cfg.simplify !== false) {
+      text = await _toSimplified(text);
+    }
+    return text;
+  }
+};
+</script>
+<style>
+.group-info-backdrop { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:998; }
+.group-info-panel { position:fixed; top:0; right:0; width:300px; height:100vh; background:#143028; border-left:1px solid #2f6b54; z-index:999; overflow-y:auto; padding:0; transform:translateX(0); transition:transform 0.2s; }
+.gi-header { display:flex; align-items:center; padding:12px 16px; border-bottom:1px solid #1a3d32; }
+.gi-close { font-size:22px; cursor:pointer; color:#8fb9a6; margin-right:8px; }
+.gi-close:hover { color:#e94560; }
+.gi-btn { background:none; border:1px solid #2f6b54; color:#f0c040; padding:4px 12px; border-radius:0; cursor:pointer; font-size:15px; margin-left:8px; }
+.gi-btn:hover { background:#1a1a2e; }
+#group-info-content { padding:12px 16px; }
+</style>
+{% endblock %}
+{% block nav_right %}
+<a href="/" class="nav-link">仪表盘</a>
+{% endblock %}
+{% block content %}
+<div id="app">
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <input type="text" id="contact-search" placeholder="搜索联系人/群聊..." autocomplete="off">
+    </div>
+    <div id="contact-list" class="contact-list"></div>
+  </aside>
+
+  <main id="main">
+    <div id="welcome" class="welcome">
+      <div class="welcome-icon">💬</div>
+      <h2>选择左侧联系人开始浏览</h2>
+      <p>支持文本、图片、语音、视频、位置、链接、名片等多种消息类型</p>
+    </div>
+
+    <div id="chat-header" class="chat-header" style="display:none">
+      <img id="header-avatar" class="header-avatar" src="" style="display:none"
+           onerror="this.style.display='none'" alt="" />
+      <div class="header-info">
+        <span id="chat-name" class="chat-name"></span>
+        <span id="chat-stats" class="chat-stats"></span>
+      </div>
+      <button id="btn-group-info" class="gi-btn" style="display:none" onclick="openGroupInfo()" title="群信息">ⓘ</button>
+    </div>
+
+    <div id="filter-bar" class="filter-bar" style="display:none">
+      <input type="text" id="filter-keyword" placeholder="搜索消息内容..." autocomplete="off">
+      <input type="date" id="filter-date-start" title="开始日期">
+      <span class="date-sep">—</span>
+      <input type="date" id="filter-date-end" title="结束日期">
+      <select id="filter-type">
+        <option value="">全部类型</option>
+        <option value="1">文本</option>
+        <option value="3">图片</option>
+        <option value="34">语音</option>
+        <option value="43">视频</option>
+        <option value="48">位置</option>
+        <option value="49">链接/转发</option>
+        <option value="42">名片</option>
+        <option value="47">表情</option>
+        <option value="6">文件</option>
+        <option value="50">网络电话</option>
+        <option value="10000,10002">系统消息</option>
+      </select>
+      <select id="filter-sender"><option value="">全部发送者</option></select>
+      <span id="filter-result-count" class="filter-result-count"></span>
+    </div>
+
+    <div id="message-list" class="message-list" style="display:none"></div>
+
+    <div id="pagination-bar" class="pagination-bar" style="display:none">
+      <div class="pagination-controls">
+        <button id="btn-first" class="pg-btn" title="首页">&#171;</button>
+        <button id="btn-prev" class="pg-btn" title="上页">&#8249;</button>
+        <span id="page-numbers" class="page-numbers"></span>
+        <button id="btn-next" class="pg-btn" title="下页">&#8250;</button>
+        <button id="btn-last" class="pg-btn" title="末页">&#187;</button>
+      </div>
+      <div class="pagination-jump">
+        <span>&#x1f4c5;</span>
+        <input type="date" id="jump-date" title="跳转到日期">
+        <button id="btn-jump-date" class="pg-btn">跳转</button>
+      </div>
+      <div class="pagination-info" id="pagination-info"></div>
+    </div>
+  </main>
+</div>
+
+<!-- Group Info Panel (slide-in from right) -->
+<div id="group-info-backdrop" class="group-info-backdrop" style="display:none" onclick="closeGroupInfo()"></div>
+<div id="group-info-panel" class="group-info-panel" style="display:none">
+  <div class="gi-header">
+    <span class="gi-close" onclick="closeGroupInfo()">&times;</span>
+    <span style="color:#8fb9a6;font-size:12px">群详情</span>
+  </div>
+  <div id="group-info-content"></div>
+</div>
+
+<div id="lightbox" class="lightbox" style="display:none" onclick="this.style.display='none'">
+  <span class="lightbox-close">&times;</span>
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<audio id="audio-player" style="display:none" controls></audio>
+<a id="voice-download" style="display:none;margin-left:12px;color:#f0c040;font-size:12px;text-decoration:none" download>下载语音文件</a>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/api.js') }}"></script>
+<script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+<script src="{{ url_for('static', filename='js/store.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/component.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/contact-list.js') }}"></script>
+<script src="{{ url_for('static', filename='js/image-fallback.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/message-bubble.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/voice-player.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/pagination.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/group-info.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/chat-header.js') }}"></script>
+<script src="{{ url_for('static', filename='js/components/filter-bar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% endblock %}

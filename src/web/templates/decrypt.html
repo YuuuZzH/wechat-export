@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}解密数据库 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">🔓 解密数据库</h2>
+<p style="color:#8fb9a6;font-size:12px;margin:0 0 20px 0">使用密钥文件批量解密微信聊天数据库</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:2"><label>微信数据目录 (db_storage)</label><input id="cfg-db-dir" placeholder="例如: D:\xwechat_files\wxid_xxx\db_storage"></div>
+    <div style="flex:2"><label>输出目录</label><input id="cfg-output" placeholder="解密后存放位置"></div>
+    <div><label>&nbsp;</label><button id="btn-run" class="btn btn-primary">开始解密</button></div>
+  </div>
+</div>
+<div class="config-panel" style="margin-top:0">
+  <div style="margin-bottom:8px">
+    <button id="btn-deep" class="btn btn-secondary" style="font-size:11px">🔍 深度搜索</button>
+    <button id="btn-use-dir" class="btn btn-secondary" style="font-size:11px">使用该目录</button>
+  </div>
+  <div class="form-row">
+    <div style="flex:4"><label>检测到的数据目录（选择即填入上面的输入框）</label>
+      <select id="cfg-db-dir-list" style="width:100%;padding:8px 10px;border:1px solid #2f6b54;border-radius:0;background:#0a1612;color:#e8f7ee;font-size:13px"></select></div>
+  </div>
+  <div id="dir-hint" style="color:#8fb9a6;font-size:12px;margin-top:8px;line-height:1.8">
+    💡 找不到数据目录时点「🔍 深度搜索」（最长 45 秒）；也可以在微信「设置 → 文件管理 → 打开文件夹」里查看，
+    把 <code>xwechat_files\&lt;账号&gt;\db_storage</code> 粘贴到输入框后点「使用该目录」。</div>
+</div>
+
+<div id="progress-container" class="progress-panel" style="display:none">
+  <div class="progress-bar-outer"><div id="progress-bar" class="progress-bar-inner" style="width:0%"></div></div>
+  <div id="progress-detail" class="progress-detail">等待开始...</div>
+  <div id="log-console" class="log-console" style="margin-top:12px"></div>
+</div>
+
+<div id="result-container" class="result-panel" style="display:none">
+  <h3>✓ 解密完成</h3>
+  <div id="result-content"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/sse_progress.js') }}"></script>
+<script src="{{ url_for('static', filename='js/wizard.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dbdir.js') }}"></script>
+<script>
+// 数据目录选择器：自动检测 / 深度搜索 / 使用该目录（记住到配置）
+const dirPicker = new DbDirPicker({ inputId: 'cfg-db-dir' });
+
+const page = new WizardPage({
+  runBtnId: 'btn-run',
+  apiUrl: '/api/backup/decrypt',
+  steps: ['decrypt'],
+  getBody: () => ({
+    db_dir: document.getElementById('cfg-db-dir').value,
+    output_dir: document.getElementById('cfg-output').value,
+  }),
+});
+
+page.showResult = function(result) {
+  WizardPage.prototype.showResult.call(this, result);
+  let html = '<dl class="result-stats">';
+  if (result.decrypted !== undefined) html += '<dt>已解密数据库</dt><dd>' + result.decrypted + ' 个</dd>';
+  if (result.files) html += '<dt>文件列表</dt><dd>' + result.files.map(f => '<code>' + f + '</code>').join('<br>') + '</dd>';
+  html += '</dl>';
+  document.getElementById('result-content').innerHTML = html;
+};
+</script>
+{% endblock %}

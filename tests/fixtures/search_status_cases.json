@@ -1,0 +1,446 @@
+{
+  "note": "`GET /api/search/status` 的**同源**夹具，由 Node（tests/js/search_render_notice.js）与 pytest（tests/test_search_page.py）各自读取，用来交叉校验两处判据不漂移：\n  * JS 侧: `src/web/static/js/search-render.js` 的 `statusNotice(status)`；\n  * 服务端: `src/web/routes/search_api.py` 的 `_index_incompleteness(status)` + `_text_ready(status)`。\n基线是**真机实测形态的合成值**（聚合计数，没有任何真实姓名/正文/wxid）。\n每个 case 自带完整 status（不做继承），避免两端各写一份 merge 逻辑。",
+  "contract": "两处判据**不是**同一个谓词，关系是：expect_warn == (expect_incomplete or not status.text_ready)。`_index_incompleteness` 有意不看 text_ready（HTTP 层把它作为独立字段暴露），所以 meta-only 构建那一格是 incomplete=False 但必须告警。任一侧新增真信号而另一侧没跟，就会有一个 case 变红。当前**无** known_divergence（最后一处已于 Task 7 fix round 2 修服务端后销账）。",
+  "cases": [
+    {
+      "name": "healthy real-world install (fts_coverage 0.8615)",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 877712,
+        "msg_text_rows": 877712,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": true
+      },
+      "expect_incomplete": false,
+      "expect_warn": false,
+      "server_reasons_contains": [],
+      "notice_contains": []
+    },
+    {
+      "name": "low fts_coverage 0.5 alone is NOT an alarm",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 400000,
+        "msg_text_rows": 400000,
+        "fts_coverage": 0.5,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": true
+      },
+      "expect_incomplete": false,
+      "expect_warn": false,
+      "server_reasons_contains": [],
+      "notice_contains": []
+    },
+    {
+      "name": "fts_skipped_empty_text is legitimate (no-body messages)",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 877712,
+        "msg_text_rows": 877712,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": true
+      },
+      "expect_incomplete": false,
+      "expect_warn": false,
+      "server_reasons_contains": [],
+      "notice_contains": []
+    },
+    {
+      "name": "stale index is the status bar's job, not this alarm",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": true,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 877712,
+        "msg_text_rows": 877712,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": true
+      },
+      "expect_incomplete": false,
+      "expect_warn": false,
+      "server_reasons_contains": [],
+      "notice_contains": []
+    },
+    {
+      "name": "fts_rows_without_meta alone is not an alarm on either side",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 877712,
+        "msg_text_rows": 877712,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 5,
+        "built_at": 1600000000,
+        "text_ready": true
+      },
+      "expect_incomplete": false,
+      "expect_warn": false,
+      "server_reasons_contains": [],
+      "notice_contains": []
+    },
+    {
+      "name": "meta_coverage 0.9 (metadata missing messages)",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 0.9,
+        "fts_rows": 877712,
+        "msg_text_rows": 877712,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": true
+      },
+      "expect_incomplete": true,
+      "expect_warn": true,
+      "server_reasons_contains": [
+        "元数据只覆盖"
+      ],
+      "notice_contains": [
+        "索引不完整",
+        "元数据只覆盖"
+      ]
+    },
+    {
+      "name": "fts_skipped_no_chat 1 (chat mapping broken)",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 877712,
+        "msg_text_rows": 877712,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 1,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": true
+      },
+      "expect_incomplete": true,
+      "expect_warn": true,
+      "server_reasons_contains": [
+        "会话映射失效"
+      ],
+      "notice_contains": [
+        "索引不完整",
+        "会话映射失效"
+      ]
+    },
+    {
+      "name": "msg_text_rows != fts_rows (index self-inconsistent)",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 877712,
+        "msg_text_rows": 800000,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": true
+      },
+      "expect_incomplete": true,
+      "expect_warn": true,
+      "server_reasons_contains": [
+        "行数不一致"
+      ],
+      "notice_contains": [
+        "索引不完整",
+        "行数不一致"
+      ]
+    },
+    {
+      "name": "duplicates_dropped 3",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 877712,
+        "msg_text_rows": 877712,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 3,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": true
+      },
+      "expect_incomplete": true,
+      "expect_warn": true,
+      "server_reasons_contains": [
+        "重复行"
+      ],
+      "notice_contains": [
+        "索引不完整",
+        "重复行"
+      ]
+    },
+    {
+      "name": "schema_ok false",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": false,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 877712,
+        "msg_text_rows": 877712,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": false
+      },
+      "expect_incomplete": true,
+      "expect_warn": true,
+      "server_reasons_contains": [
+        "schema"
+      ],
+      "notice_contains": [
+        "索引不完整",
+        "schema"
+      ]
+    },
+    {
+      "name": "source_shards 0 (source not mounted)",
+      "status": {
+        "exists": false,
+        "ready": false,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 0,
+        "source_rows": 0,
+        "meta_rows": 0,
+        "meta_coverage": 0.0,
+        "fts_rows": 0,
+        "msg_text_rows": 0,
+        "fts_coverage": 0.0,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 0,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": false
+      },
+      "expect_incomplete": true,
+      "expect_warn": true,
+      "server_reasons_contains": [
+        "消息分片"
+      ],
+      "notice_contains": [
+        "索引不完整",
+        "消息分片"
+      ]
+    },
+    {
+      "name": "meta-only build: ready=True, fts_rows=0, text_ready=False",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 0,
+        "msg_text_rows": 0,
+        "fts_coverage": 0.0,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 0,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": false
+      },
+      "expect_incomplete": false,
+      "expect_warn": true,
+      "server_reasons_contains": [],
+      "notice_contains": [
+        "全文索引",
+        "关键词"
+      ],
+      "notice_absent": [
+        "索引不完整"
+      ],
+      "note": "服务端 `_index_incompleteness` **不**看 text_ready（它是 HTTP 层单独暴露的字段），所以这里 incomplete=False；页面必须告警。两者的关系被钉成 expect_warn == (incomplete or not text_ready)，本条正是该关系的判别样本。"
+    },
+    {
+      "name": "index partially built: meta_rows=0, meta_coverage=0",
+      "status": {
+        "exists": false,
+        "ready": false,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 0,
+        "meta_coverage": 0.0,
+        "fts_rows": 0,
+        "msg_text_rows": 0,
+        "fts_coverage": 0.0,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 0,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": false
+      },
+      "expect_incomplete": true,
+      "expect_warn": true,
+      "server_reasons_contains": [
+        "元数据只覆盖"
+      ],
+      "notice_contains": [
+        "索引不完整",
+        "元数据只覆盖",
+        "全文索引"
+      ]
+    },
+    {
+      "name": "partial response missing msg_text_rows (presence guard: both sides silent)",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": 877712,
+        "msg_text_rows": null,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": true
+      },
+      "expect_incomplete": false,
+      "expect_warn": false,
+      "server_reasons_contains": [],
+      "notice_contains": [],
+      "note": "存在性守卫样本（**曾经**是 known_divergence，已销账）：msg_text_rows 缺失/为 None 时两侧都必须**不**告警 —— 服务端 `_index_incompleteness` 已加 `if msg_text_rows is not None and ...`，与 JS 的 `_has(status,'msg_text_rows')` 对齐。镜像方向（fts_rows 缺失）见下一条 case。⚠️ 守卫只放过 None/缺失，**不放过 0**：`msg_text_rows=0` 照旧告警（老索引缺该 meta 键拿到的是 0，那是真信号）。"
+    },
+    {
+      "name": "partial response missing fts_rows (mirror presence guard: no 行数不一致)",
+      "status": {
+        "exists": true,
+        "ready": true,
+        "stale": false,
+        "schema_ok": true,
+        "source_shards": 7,
+        "source_rows": 1018918,
+        "meta_rows": 1018918,
+        "meta_coverage": 1.0,
+        "fts_rows": null,
+        "msg_text_rows": 800000,
+        "fts_coverage": 0.8615,
+        "fts_skipped_no_chat": 0,
+        "fts_skipped_empty_text": 141206,
+        "duplicates_dropped": 0,
+        "fts_rows_without_meta": 0,
+        "built_at": 1600000000,
+        "text_ready": false
+      },
+      "expect_incomplete": false,
+      "expect_warn": true,
+      "server_reasons_contains": [],
+      "notice_contains": [
+        "全文索引"
+      ],
+      "notice_absent": [
+        "行数不一致"
+      ],
+      "note": "镜像存在性守卫样本：fts_rows 缺失/None 时两侧都**不再**给出『行数不一致』（服务端 `if msg_text_rows is not None and fts_rows is not None and ...`，与 JS 的 `_has(status,'fts_rows')` 对称）。⚠️ 本条的 expect_warn 是 **true**，不是 false ——同一处缺失会把 `_text_ready` 推成 false，而 text_ready=false 本身是一条真告警（『全文索引未构建，关键词搜索不可信』）。⚠️ 守卫只放过 None/缺失，**不放过 0**：fts_rows=0 配 msg_text_rows=877712 照旧告警（实测 `msg_text(877712) 与 message_fts(0) 行数不一致`）。"
+    }
+  ]
+}
