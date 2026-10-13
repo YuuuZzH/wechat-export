@@ -339,7 +339,8 @@ def decrypt_for_backup(
             [f for f in os.listdir(msg_src) if f.startswith('media_') and f.endswith('.db')]
         )
         db_files = msg_files + media_files
-        total = len(db_files) + 2  # +2 for contact + hardlink
+        # +3: contact + hardlink + sns（朋友圈，可选）
+        total = len(db_files) + 3
         for i, fname in enumerate(db_files):
             src_path = os.path.join(msg_src, fname)
             dst_path = os.path.join(msg_out, fname)
@@ -395,23 +396,31 @@ def decrypt_for_backup(
             if on_progress:
                 on_progress(f"已解密: {fname}", prog)
     else:
-        total = 2
+        total = 3  # contact + hardlink + sns
 
     # --- Contact database ---
     contact_src = os.path.join(db_storage_path, 'contact', 'contact.db')
     contact_dst = os.path.join(output_dir, 'contact', 'contact.db')
     if os.path.isfile(contact_src):
-        if not _handle_one(contact_src, contact_dst, 'contact.db', (total - 1) / total):
+        if not _handle_one(contact_src, contact_dst, 'contact.db', 0.94):
             if on_progress and _resolve_key(keys, contact_src, salt_keys) is None:
-                on_progress('跳过 contact.db (缺密钥)', (total - 1) / total)
+                on_progress('跳过 contact.db (缺密钥)', 0.94)
 
     # --- Hardlink database ---
     hardlink_src = os.path.join(db_storage_path, 'hardlink', 'hardlink.db')
     hardlink_dst = os.path.join(output_dir, 'hardlink', 'hardlink.db')
     if os.path.isfile(hardlink_src):
-        if not _handle_one(hardlink_src, hardlink_dst, 'hardlink.db', 0.98):
+        if not _handle_one(hardlink_src, hardlink_dst, 'hardlink.db', 0.97):
             if on_progress and _resolve_key(keys, hardlink_src, salt_keys) is None:
-                on_progress('跳过 hardlink.db (缺密钥)', 0.98)
+                on_progress('跳过 hardlink.db (缺密钥)', 0.97)
+
+    # --- SNS / Moments database (optional; key may be missing on older harvests) ---
+    sns_src = os.path.join(db_storage_path, 'sns', 'sns.db')
+    sns_dst = os.path.join(output_dir, 'sns', 'sns.db')
+    if os.path.isfile(sns_src):
+        if not _handle_one(sns_src, sns_dst, 'sns.db', 0.99):
+            if on_progress and _resolve_key(keys, sns_src, salt_keys) is None:
+                on_progress('跳过 sns.db (缺密钥 — 可打开微信朋友圈后重新提取密钥)', 0.99)
 
     # Persist fingerprints for next incremental run
     try:

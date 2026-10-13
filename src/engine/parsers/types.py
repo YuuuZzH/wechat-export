@@ -69,20 +69,93 @@ def parse_text(xml_bytes):
     return {'text': None}  # text messages use Content field directly
 
 
+def _detect_live_photo(root, xml_bytes=None):
+    """Detect chat / SNS Live Photo markers in XML.
+
+    Returns dict with is_live_photo + optional live_video_* fields.
+    """
+    info = {
+        'is_live_photo': False,
+        'live_video_url': None,
+        'live_video_md5': None,
+        'live_video_aeskey': None,
+        'live_enc_key': None,
+    }
+    raw = ''
+    if isinstance(xml_bytes, (bytes, bytearray)):
+        raw = bytes(xml_bytes).decode('utf-8', errors='replace')
+    elif isinstance(xml_bytes, str):
+        raw = xml_bytes
+
+    live_node = None
+    if root is not None:
+        live_node = root.find('.//livePhoto') or root.find('.//livephoto') or root.find('.//LivePhoto')
+        img = root if getattr(root, 'tag', None) == 'img' else (root.find('.//img') if root is not None else None)
+        if img is not None:
+            for attr in ('islive', 'isLive', 'live', 'liveid', 'liveId', 'livephoto'):
+                val = (img.get(attr) or '').strip().lower()
+                if val and val not in ('0', 'false', 'no'):
+                    info['is_live_photo'] = True
+                    break
+
+    if live_node is not None:
+        info['is_live_photo'] = True
+        info['live_video_url'] = (
+            live_node.findtext('url') or live_node.get('url')
+            or live_node.findtext('cdnvideourl') or live_node.get('cdnvideourl')
+        )
+        info['live_video_md5'] = (
+            live_node.findtext('md5') or live_node.get('md5')
+            or live_node.findtext('videomd5') or live_node.get('videomd5')
+        )
+        info['live_video_aeskey'] = (
+            live_node.findtext('aeskey') or live_node.get('aeskey')
+            or live_node.findtext('key') or live_node.get('key')
+        )
+
+    # Regex fallback for protobuf-corrupted XML
+    if not info['is_live_photo'] and raw:
+        if re.search(r'<livePhoto\b|islive\s*=\s*["\']?1|livephoto', raw, re.I):
+            info['is_live_photo'] = True
+        m = re.search(r'<livePhoto[^>]*>.*?<url[^>]*>([^<]+)</url>', raw, re.I | re.S)
+        if m:
+            info['live_video_url'] = m.group(1).strip()
+        m = re.search(r'<livePhoto[^>]*>.*?<md5[^>]*>([a-fA-F0-9]{32})</md5>', raw, re.I | re.S)
+        if m:
+            info['live_video_md5'] = m.group(1)
+        m = re.search(r'<enc\s+key=["\'](\d+)["\']', raw, re.I)
+        if m:
+            info['live_enc_key'] = m.group(1)
+
+    if root is not None and not info['live_enc_key']:
+        enc = root.find('.//enc')
+        if enc is not None and enc.get('key'):
+            info['live_enc_key'] = enc.get('key')
+
+    if info['is_live_photo']:
+        info['text'] = '[实况]'
+    return info
+
+
 @register(3)
 def parse_image(xml_bytes):
     root = _safe_xml(xml_bytes)
+    live = _detect_live_photo(root, xml_bytes)
     if root is None:
-        return {'text': '[图片]', 'image_path': None, 'thumb_path': None}
+        base = {'text': live.get('text') or '[图片]', 'image_path': None, 'thumb_path': None}
+        base.update(live)
+        return base
     # Root may be <img> directly (WeChat 4.x zstd XML) or <msg><img>
     img = root if root.tag == 'img' else root.find('.//img')
     if img is None:
-        return {'text': '[图片]', 'image_path': None, 'thumb_path': None}
+        base = {'text': live.get('text') or '[图片]', 'image_path': None, 'thumb_path': None}
+        base.update(live)
+        return base
     big = img.get('big') or img.get('cdnbigimgurl') or img.get('hdlength')
     thumb = img.get('thumb') or img.get('cdnthumburl')
     aeskey = img.get('aeskey') or img.get('aes_key') or img.get('cdnthumbaeskey')
-    return {
-        'text': '[图片]',
+    result = {
+        'text': live.get('text') or '[图片]',
         'image_path': big,
         'thumb_path': thumb,
         'aeskey': aeskey,
@@ -92,6 +165,10 @@ def parse_image(xml_bytes):
         'width': int(img.get('width', 0) or img.get('cdnthumbwidth', 0)) if (img.get('width') or img.get('cdnthumbwidth')) else None,
         'height': int(img.get('height', 0) or img.get('cdnthumbheight', 0)) if (img.get('height') or img.get('cdnthumbheight')) else None,
     }
+    result.update(live)
+    if live.get('is_live_photo'):
+        result['text'] = '[实况]'
+    return result
 
 
 @register(6)

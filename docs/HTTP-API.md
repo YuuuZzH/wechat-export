@@ -105,6 +105,20 @@ Host: 127.0.0.1:5000
 
 ---
 
+## 朋友圈（离线）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/sns/status` | 是否已解密 `sns.db` |
+| GET | `/api/sns/posts?q=&username=&start=&end=&limit=&offset=` | 时间线列表 |
+| GET | `/api/sns/media?url=&token=&key=&video=` | 本地缓存或 CDN+ISAAC 解密 |
+| POST | `/api/sns/export` | 导出 JSON/HTML（SSE） |
+| GET | `/api/sns/download/<filename>` | 下载导出文件 |
+
+页面入口：`/sns`。聊天实况图：图片消息 XML 含 `livePhoto` / `islive` 时，`xml_parsed.is_live_photo=true`。
+
+---
+
 ## 通讯录
 
 | 方法 | 路径 | 说明 |

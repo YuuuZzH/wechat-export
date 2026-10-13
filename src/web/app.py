@@ -220,6 +220,13 @@ def create_app(decrypted_dir: str, wxid: str = None, db_dir: str = None) -> Flas
 
     _register_blueprint(app, 'routes.export_api', _register_export_bp)
 
+    # Moments / 朋友圈（离线只读）
+    def _register_sns_bp():
+        from .routes.sns_api import sns_bp
+        app.register_blueprint(sns_bp)
+
+    _register_blueprint(app, 'routes.sns_api', _register_sns_bp)
+
     # New: 语音导出 API（按人批量导出语音留言）
     def _register_voice_export_bp():
         from .routes.voice_export_api import voice_export_bp
@@ -369,6 +376,10 @@ def create_app(decrypted_dir: str, wxid: str = None, db_dir: str = None) -> Flas
     @app.route('/group')
     def group_page():
         return render_template('group.html')
+
+    @app.route('/sns')
+    def sns_page():
+        return render_template('sns.html')
 
     @app.route('/manual')
     @app.route('/docs')

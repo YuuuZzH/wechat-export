@@ -50,7 +50,8 @@ class MessageBubble extends Component {
       content = `<span class="msg-type-tag voice">语音</span> ${durStr}`;
     } else if ((m.msg_type === 3 || m.msg_type === 43 || m.msg_type === 6) && m.media_info) {
       const mi = m.media_info;
-      const labels = {3:'图片', 43:'视频', 6:'文件'};
+      const isLive = !!(m.xml_parsed && m.xml_parsed.is_live_photo);
+      const labels = {3: isLive ? '实况' : '图片', 43:'视频', 6:'文件'};
       const label = labels[m.msg_type] || '';
       const name = mi.file_name ? ' ' + escapeHtml(mi.file_name) : '';
       let sizeStr = '';
@@ -122,10 +123,23 @@ class MessageBubble extends Component {
         }
       }
       const isWx4 = mi && mi.file_name && mi.file_name.endsWith('.dat') && !mi.file_name.endsWith('_W.dat');
+      const isLive = !!(p.is_live_photo);
       if (imgUrl) {
         const fallbackMsg = isWx4 ? 'V2加密图片无法解码 — 请在微信中查看该图片后刷新重试' : '图片已过期或不可访问';
         const imgId = `img-${m.id}`;
-        body = `<div style="text-align:center"><img id="${imgId}" class="bubble-image" src="${imgUrl}" alt="图片" onclick="event.stopPropagation();openLightbox('${lightboxUrl}')" onerror="ImageFallback.handle(this)"><div class="img-fallback" style="color:#8b949e;padding:16px;display:none">${fallbackMsg}</div>${mi&&mi.file_name?`<div style="color:#8b949e;font-size:10px;margin-top:4px">${escapeHtml(mi.file_name)} ${mi.file_size?((mi.file_size/1024).toFixed(1)+' KB'):''}</div>`:''}</div>`;
+        const liveBadge = isLive ? '<div style="color:#e04570;font-size:11px;margin-bottom:4px">实况 Live Photo</div>' : '';
+        let liveVideo = '';
+        if (isLive && (p.live_video_md5 || p.live_video_url)) {
+          // Prefer hardlink resolve via md5 when present
+          const liveMi = p.live_video_md5 ? {md5: p.live_video_md5, media_type: 43} : null;
+          const liveUrl = liveMi ? (api.hardlinkMediaUrl(liveMi, 43) || '') : '';
+          if (liveUrl) {
+            liveVideo = `<video src="${liveUrl}" controls preload="metadata" style="width:100%;max-height:280px;margin-top:8px;background:#000" playsinline></video>`;
+          } else if (p.live_video_url) {
+            liveVideo = `<div style="color:#8b949e;font-size:11px;margin-top:6px">实况视频 URL 已识别，本地文件未命中</div>`;
+          }
+        }
+        body = `<div style="text-align:center">${liveBadge}<img id="${imgId}" class="bubble-image" src="${imgUrl}" alt="${isLive?'实况':'图片'}" onclick="event.stopPropagation();openLightbox('${lightboxUrl}')" onerror="ImageFallback.handle(this)"><div class="img-fallback" style="color:#8b949e;padding:16px;display:none">${fallbackMsg}</div>${liveVideo}${mi&&mi.file_name?`<div style="color:#8b949e;font-size:10px;margin-top:4px">${escapeHtml(mi.file_name)} ${mi.file_size?((mi.file_size/1024).toFixed(1)+' KB'):''}</div>`:''}</div>`;
       } else if (mi && mi.md5) {
         body = `<div class="nontext-placeholder image-plc"><span>🖼</span><span>图片</span><div style="color:#484f58;font-size:10px;margin-top:4px">MD5: ${escapeHtml(mi.md5.substring(0,16))}... 文件未找到</div></div>`;
       } else {
