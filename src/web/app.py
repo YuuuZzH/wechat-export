@@ -11,7 +11,7 @@ from engine.version import VERSION as __version__
 logger = logging.getLogger(__name__)
 
 _GITHUB_RAW_SHOTS = (
-    'https://raw.githubusercontent.com/YuuuZzH/wechat-export/main/screenshots/'
+    'https://raw.githubusercontent.com/yuuuzzh/wechat-export/main/screenshots/'
 )
 
 
@@ -60,7 +60,7 @@ def _render_readme_html() -> str:
         return (
             '<h1>WeChat Export</h1>'
             '<p>未找到 README.md。请查看 '
-            '<a href="https://github.com/YuuuZzH/wechat-export" target="_blank" rel="noopener">'
+            '<a href="https://github.com/yuuuzzh/wechat-export" target="_blank" rel="noopener">'
             'GitHub 仓库</a>。</p>'
         )
     try:

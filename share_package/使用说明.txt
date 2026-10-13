@@ -1,7 +1,7 @@
 ========================================
   WeChat Export（微信导出）使用说明
   维护者：yuuu
-  仓库：https://github.com/YuuuZzH/wechat-export
+  仓库：https://github.com/yuuuzzh/wechat-export
 ========================================
 
 【这是什么】

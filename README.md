@@ -1,6 +1,6 @@
 ﻿# WeChat Export · 微信导出
 
-> **维护者**：yuuu · **仓库**：https://github.com/YuuuZzH/wechat-export  
+> **维护者**：yuuu · **仓库**：https://github.com/yuuuzzh/wechat-export  
 > **版本**：2.11.20261011 · **平台**：Windows 10/11 · **微信**：4.x（已测 4.1.9 / 4.1.10 / 4.1.12.55 / 4.1.15.11）  
 > **定位**：本地完成微信聊天记录的**分析、搜索与多格式导出**（备份是前置步骤）
 
@@ -400,10 +400,12 @@ python src/main.py voice-export --chat 家族群 --merge-by person --format mp3
 
 ## 8. 下载与发布
 
-- **源码**：https://github.com/YuuuZzH/wechat-export  
+- **源码**：https://github.com/yuuuzzh/wechat-export  
 - **维护者**：yuuu  
-- **最新 Release**：https://github.com/YuuuZzH/wechat-export/releases/tag/v0.1.0  
-- **Windows 可执行文件**：https://github.com/YuuuZzH/wechat-export/releases/download/v0.1.0/WeChatExport-v0.1.0-windows-x64.exe  
+- **最新 Release**：https://github.com/yuuuzzh/wechat-export/releases/tag/v0.1.0  
+- **Windows 可执行文件**：https://github.com/yuuuzzh/wechat-export/releases/download/v0.1.0/WeChatExport-v0.1.0-windows-x64.exe  
+- **后续规划**：吸收 [WeFlow](https://github.com/hicccc77/WeFlow) 等项目的可落地 idea，见 [`docs/ROADMAP-weflow-ideas.md`](docs/ROADMAP-weflow-ideas.md)  
+
 
 下载 exe 后双击即可；也可本地执行 `quick_build.bat` / `build.bat` 自行打包。分享包目录：`share_package/`（模板与说明）。
 
