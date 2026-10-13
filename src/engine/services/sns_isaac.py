@@ -1,6 +1,6 @@
 """ISAAC-64 keystream + XOR decrypt for WeChat Moments (SNS) CDN media.
 
-Algorithm details match community reverse of WeChat 4.x / WeFlow write-ups:
+Algorithm details match public community reverse engineering of WeChat 4.x SNS media:
 - Seed = uint64 media key from XML
 - Keystream emitted as big-endian uint64 words
 - Images: XOR entire file

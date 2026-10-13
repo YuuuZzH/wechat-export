@@ -23,6 +23,20 @@
 | 综合 / 年度 / 词云 | 图表报告离线可用（不依赖 CDN）；年度报告可限定单个会话 |
 | Pull 数据源 | 供 ChatLab 远程增量拉取 |
 
+### 为什么用 WeChat Export，而不是别的工具？
+
+同类工具路线并不相同。WeChat Export 明确走 **「本机备份 → 解密 → 分析 / 导出」**，适合把聊天记录变成**可检索、可导出、可二次开发**的本地资产，而不是依赖进程挂钩做实时旁路。
+
+| 你更在意… | WeChat Export 的选择 |
+|-----------|----------------------|
+| 数据边界 | 默认本机闭环；备份后可在微信关闭时继续查与导出 |
+| 可复现流水线 | 一键备份（可增量）→ 查看 / 搜索 / 报告 → 多格式导出 |
+| 导出与对接 | TXT / HTML / Excel / CSV / Markdown / JSON / PGSQL / 会话报告包 / ChatLab；本地 HTTP API |
+| 工程形态 | 开源 Python + 单文件 `wechat_exp.exe`，无「必须自备原生解密插件」才能跑主流程 |
+| 不做的事 | 不承诺实时防撤回、桌面弹窗、写回微信库等挂钩能力（风险高、与本产品定位不符） |
+
+若你需要的是**实时注入 / 防撤回 / 桌面通知**一类能力，应另选对应路线的工具；若你的目标是**离线归档、批量导出、统计报告与脚本对接**，WeChat Export 更贴合。
+
 ---
 
 ## ⚠️ 免责声明与使用条款（必读）
@@ -404,8 +418,6 @@ python src/main.py voice-export --chat 家族群 --merge-by person --format mp3
 - **维护者**：yuuu  
 - **最新 Release**：https://github.com/yuuuzzh/wechat-export/releases/tag/v0.1.0  
 - **Windows 可执行文件**：https://github.com/yuuuzzh/wechat-export/releases/download/v0.1.0/WeChatExport-v0.1.0-windows-x64.exe  
-- **后续规划**：吸收 [WeFlow](https://github.com/hicccc77/WeFlow) 等项目的可落地 idea，见 [`docs/ROADMAP-weflow-ideas.md`](docs/ROADMAP-weflow-ideas.md)  
-
 
 下载 exe 后双击即可；也可本地执行 `quick_build.bat` / `build.bat` 自行打包。分享包目录：`share_package/`（模板与说明）。
 
