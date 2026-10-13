@@ -1,0 +1,355 @@
+{% extends "base.html" %}
+{% block title %}双人报告 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">双人报告</h2>
+<p style="color:var(--px-muted);font-size:12px;margin:0 0 20px 0">选定一位好友，生成双方互动专属分析（消息占比、回复速度、类型与时段）</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:1"><label>年份</label><input id="cfg-year" type="number" value="2026" min="2011" max="2030"></div>
+    <div style="flex:2"><label>搜索好友</label><input id="cfg-q" placeholder="备注 / 昵称 / wxid" autocomplete="off"></div>
+    <div><label>&nbsp;</label><button type="button" id="btn-refresh" class="btn btn-secondary">刷新列表</button></div>
+  </div>
+</div>
+
+<div class="config-panel" style="margin-top:12px">
+  <label style="display:block;margin-bottom:8px">选择好友（仅私聊）</label>
+  <div id="friend-picker" class="duo-picker">
+    <div class="duo-picker-empty">加载中…</div>
+  </div>
+  <div id="sel-summary" class="duo-sel" style="display:none"></div>
+  <div style="margin-top:12px">
+    <button type="button" id="btn-load" class="btn btn-primary" disabled>生成双人报告</button>
+  </div>
+</div>
+
+<div id="loading" style="display:none;text-align:center;padding:40px;color:var(--px-muted)">加载中…</div>
+<div id="duo-content" style="display:none">
+  <div id="cards-container" style="display:flex;flex-direction:column;gap:24px;margin-top:20px"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<style>
+.duo-picker {
+  max-height: 280px; overflow: auto;
+  background: var(--px-panel, #fff);
+  border: 2px solid var(--px-border);
+  border-radius: 0; padding: 6px;
+}
+.duo-picker-empty { color: var(--px-muted); font-size: 13px; padding: 24px; text-align: center; }
+.duo-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; cursor: pointer;
+  border: 2px solid transparent; margin: 0;
+  color: var(--px-text); background: transparent;
+}
+.duo-item:hover { background: rgba(255, 140, 100, 0.08); }
+.duo-item.selected { background: rgba(255, 140, 100, 0.18); border-color: var(--px-orange, #ff7a45); }
+.duo-item .name { flex: 1; font-size: 14px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duo-item .count { color: var(--px-muted); font-size: 12px; flex-shrink: 0; }
+.duo-sel { margin-top: 8px; font-size: 13px; color: var(--px-orange, #ff7a45); font-weight: 600; }
+
+.wc { background: var(--px-panel, #143028); border: 1px solid var(--px-border, #2f6b54); border-radius: 0; padding: 24px; }
+.wc h3 { margin: 0 0 6px 0; color: var(--px-text, #e8f7ee); font-size: 18px; }
+.wc .wn { color: var(--px-muted, #8fb9a6); font-size: 13px; margin-bottom: 16px; line-height: 1.6; }
+.wc-empty { text-align: center; padding: 32px 20px; color: var(--px-muted); }
+.stat-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.stat-pill { background: rgba(0,0,0,0.06); border: 1px solid var(--px-border, #2f6b54); padding: 14px 18px; flex: 1; min-width: 100px; }
+.stat-pill .sv { font-size: 28px; font-weight: 700; color: var(--px-text); }
+.stat-pill .sl { font-size: 11px; color: var(--px-muted); margin-top: 2px; }
+.ht-wrap { overflow-x: auto; }
+.ht-grid { display: grid; grid-template-columns: 40px repeat(24, 1fr); gap: 2px; font-size: 10px; }
+.ht-cell { aspect-ratio: 1; min-width: 14px; }
+.ht-label { color: var(--px-muted); display: flex; align-items: center; font-size: 10px; }
+.kw-cloud { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; padding: 12px 0; }
+.bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+.bar-label { width: 72px; color: var(--px-muted); flex-shrink: 0; }
+.bar-track { flex: 1; height: 14px; background: rgba(0,0,0,0.08); border: 1px solid var(--px-border); position: relative; }
+.bar-fill { height: 100%; background: var(--px-orange, #ff7a45); }
+.bar-fill.peer { background: var(--px-pink, #e04570); }
+.bar-val { width: 64px; text-align: right; color: var(--px-text); font-size: 12px; }
+.type-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 600px) { .type-cols { grid-template-columns: 1fr; } }
+</style>
+<script>
+(function () {
+  let selected = null;
+  let chatsCache = [];
+  let loadTimer = null;
+  const picker = document.getElementById('friend-picker');
+  const summary = document.getElementById('sel-summary');
+  const btnLoad = document.getElementById('btn-load');
+  const qInput = document.getElementById('cfg-q');
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+  function fmt(n) { return n != null ? Number(n).toLocaleString() : '—'; }
+  function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '—'; }
+  function hms(s) {
+    if (s == null || !isFinite(s)) return '—';
+    s = Math.round(s);
+    const m = Math.floor(s / 60);
+    return m > 0 ? m + '分' + (s % 60) + '秒' : s + '秒';
+  }
+
+  function renderPicker() {
+    if (!chatsCache.length) {
+      picker.innerHTML = '<div class="duo-picker-empty">暂无私聊会话。请先完成「一键备份」。</div>';
+      return;
+    }
+    let html = '';
+    for (const c of chatsCache) {
+      const sel = selected && selected.username === c.username;
+      html += '<div class="duo-item' + (sel ? ' selected' : '') + '" data-u="' + esc(c.username) + '">'
+        + '<div class="name">' + esc(c.display_name || c.username) + '</div>'
+        + '<div class="count">' + fmt(c.msg_count || c.message_count || 0) + ' 条</div></div>';
+    }
+    picker.innerHTML = html || '<div class="duo-picker-empty">没有匹配的好友</div>';
+    picker.querySelectorAll('.duo-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const u = el.getAttribute('data-u');
+        selected = chatsCache.find(c => c.username === u) || null;
+        renderPicker();
+        if (selected) {
+          summary.style.display = 'block';
+          summary.textContent = '已选：' + (selected.display_name || selected.username);
+          btnLoad.disabled = false;
+        }
+      });
+    });
+  }
+
+  const urlParams = new URLSearchParams(location.search);
+  const preChat = (urlParams.get('chat') || '').trim();
+  const preYear = urlParams.get('year');
+  if (preYear && /^\d{4}$/.test(preYear)) {
+    document.getElementById('cfg-year').value = preYear;
+  }
+
+  function loadFriends() {
+    const q = qInput.value.trim();
+    picker.innerHTML = '<div class="duo-picker-empty">加载中…</div>';
+    let url = '/api/export/chats?kind=contact';
+    if (q) url += '&q=' + encodeURIComponent(q);
+    else if (preChat) url += '&q=' + encodeURIComponent(preChat);
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        chatsCache = (data && data.chats) || [];
+        if (selected) {
+          const still = chatsCache.find(c => c.username === selected.username);
+          if (!still) selected = null;
+        }
+        if (!selected && preChat) {
+          selected = chatsCache.find(c => c.username === preChat)
+            || chatsCache.find(c => (c.display_name || '') === preChat)
+            || null;
+        }
+        if (selected) {
+          summary.style.display = 'block';
+          summary.textContent = '已选：' + (selected.display_name || selected.username);
+          btnLoad.disabled = false;
+        } else {
+          summary.style.display = 'none';
+          btnLoad.disabled = true;
+        }
+        renderPicker();
+        if (preChat && selected && !window.__duoAutoloaded) {
+          window.__duoAutoloaded = true;
+          btnLoad.click();
+        }
+      })
+      .catch(err => {
+        picker.innerHTML = '<div class="duo-picker-empty">加载失败：' + esc(err.message) + '</div>';
+      });
+  }
+
+  qInput.addEventListener('input', () => {
+    clearTimeout(loadTimer);
+    loadTimer = setTimeout(loadFriends, 280);
+  });
+  document.getElementById('btn-refresh').addEventListener('click', loadFriends);
+
+  function renderStatPills(items) {
+    return '<div class="stat-row">' + items.map(function(i) {
+      return '<div class="stat-pill"><div class="sv">' + i.v + '</div><div class="sl">' + i.l + '</div></div>';
+    }).join('') + '</div>';
+  }
+
+  function renderHeatmap(wl, hl, matrix) {
+    let max = 1;
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 24; c++) max = Math.max(max, matrix[r][c]);
+    let h = '<div class="ht-wrap"><div class="ht-grid">';
+    h += '<div class="ht-label"></div>';
+    for (let c = 0; c < 24; c++) h += '<div class="ht-label" style="justify-content:center">' + hl[c] + '</div>';
+    for (let r = 0; r < 7; r++) {
+      h += '<div class="ht-label">' + wl[r] + '</div>';
+      for (let c = 0; c < 24; c++) {
+        const v = matrix[r][c];
+        const alpha = max > 0 ? v / max : 0;
+        const color = alpha === 0 ? 'transparent' : 'rgb(' + Math.round(30 + 180 * alpha) + ',' + Math.round(130 + 30 * alpha) + ',' + Math.round(255 - 100 * alpha) + ')';
+        h += '<div class="ht-cell" style="background:' + color + '" title="' + wl[r] + ' ' + hl[c] + ': ' + v + '条"></div>';
+      }
+    }
+    return h + '</div></div>';
+  }
+
+  function renderBars(meLabel, peerLabel, meV, peerV) {
+    const max = Math.max(meV || 0, peerV || 0, 1);
+    return '<div class="bar-row"><div class="bar-label">' + esc(meLabel) + '</div>'
+      + '<div class="bar-track"><div class="bar-fill" style="width:' + ((meV || 0) / max * 100) + '%"></div></div>'
+      + '<div class="bar-val">' + fmt(meV) + '</div></div>'
+      + '<div class="bar-row"><div class="bar-label">' + esc(peerLabel) + '</div>'
+      + '<div class="bar-track"><div class="bar-fill peer" style="width:' + ((peerV || 0) / max * 100) + '%"></div></div>'
+      + '<div class="bar-val">' + fmt(peerV) + '</div></div>';
+  }
+
+  function renderTypeList(items, title) {
+    if (!items || !items.length) return '<div class="wc-empty">暂无数据</div>';
+    const max = items[0].count || 1;
+    let h = '<div style="font-size:12px;color:var(--px-muted);margin-bottom:8px">' + esc(title) + '</div>';
+    for (const t of items) {
+      h += '<div class="bar-row"><div class="bar-label" style="width:88px">' + esc(t.name) + '</div>'
+        + '<div class="bar-track"><div class="bar-fill" style="width:' + (t.count / max * 100) + '%"></div></div>'
+        + '<div class="bar-val">' + fmt(t.count) + '</div></div>';
+    }
+    return h;
+  }
+
+  const RENDERERS = {
+    'global/overview': function(d) {
+      const pills = [
+        {v: fmt(d.totalMessages), l: '总消息'},
+        {v: d.activeDays, l: '活跃天数'},
+        {v: fmt(d.messagesPerDay != null ? Number(d.messagesPerDay).toFixed(0) : '—'), l: '日均'},
+        {v: d.mostActiveHour != null ? d.mostActiveHour + ':00' : '—', l: '最活跃时段'},
+        {v: d.mostActiveWeekdayName || '—', l: '最活跃星期'},
+      ];
+      if (d.isDuo) {
+        pills.splice(1, 0,
+          {v: fmt(d.meMessages), l: '我发送'},
+          {v: fmt(d.peerMessages), l: '对方发送'});
+      }
+      return renderStatPills(pills);
+    },
+    'duo/balance': function(d) {
+      let h = renderStatPills([
+        {v: pct(d.meShare), l: '我占比'},
+        {v: pct(d.peerShare), l: (d.peerName || '对方') + '占比'},
+        {v: fmt(d.meChars), l: '我字数'},
+        {v: fmt(d.peerChars), l: '对方字数'},
+      ]);
+      h += '<div style="margin-top:8px;font-size:12px;color:var(--px-muted);margin-bottom:6px">消息条数</div>';
+      h += renderBars('我', d.peerName || '对方', d.meMessages, d.peerMessages);
+      h += '<div style="margin-top:12px;font-size:12px;color:var(--px-muted);margin-bottom:6px">字数</div>';
+      h += renderBars('我', d.peerName || '对方', d.meChars, d.peerChars);
+      return h;
+    },
+    'duo/reply_speed': function(d) {
+      const me = d.me || {};
+      const peer = d.peer || {};
+      if (!me.replies && !peer.replies) {
+        return '<div class="wc-empty">暂无可统计的回复间隔（或消息过少）</div>';
+      }
+      let h = renderStatPills([
+        {v: fmt(me.replies), l: '我回复次数'},
+        {v: hms(me.medianSeconds), l: '我中位回复'},
+        {v: fmt(peer.replies), l: '对方回复次数'},
+        {v: hms(peer.medianSeconds), l: '对方中位回复'},
+      ]);
+      h += renderStatPills([
+        {v: hms(me.avgSeconds), l: '我平均'},
+        {v: hms(me.minSeconds), l: '我最快'},
+        {v: hms(peer.avgSeconds), l: '对方平均'},
+        {v: hms(peer.minSeconds), l: '对方最快'},
+      ]);
+      return h;
+    },
+    'duo/types': function(d) {
+      return '<div class="type-cols">'
+        + '<div>' + renderTypeList(d.meTypes, '我发送的类型') + '</div>'
+        + '<div>' + renderTypeList(d.peerTypes, (d.peerName || '对方') + '发送的类型') + '</div>'
+        + '</div>';
+    },
+    'time/weekday_hour_heatmap': function(d) {
+      if (!d.matrix || !d.totalMessages) return '<div class="wc-empty">今年没有聊天数据</div>';
+      return '<div style="margin-bottom:10px;color:var(--px-muted);font-size:12px">共 ' + fmt(d.totalMessages) + ' 条消息</div>'
+        + renderHeatmap(d.weekdayLabels, d.hourLabels, d.matrix);
+    },
+    'text/keywords_wordcloud': function(d) {
+      if (!d.keywords || !d.keywords.length) return '<div class="wc-empty">暂无关键词数据</div>';
+      let h = '<div class="kw-cloud">';
+      for (const kw of d.keywords) {
+        const size = Math.round(12 + kw.weight * 28);
+        const alpha = 0.4 + kw.weight * 0.6;
+        h += '<span style="font-size:' + size + 'px;color:rgba(224,69,112,' + alpha.toFixed(2) + ');padding:2px 6px;display:inline-block" title="'
+          + esc(kw.word) + ': ' + kw.count + '次">' + esc(kw.word) + '</span>';
+      }
+      h += '</div>';
+      if (d.topKeyword) {
+        h += '<div style="text-align:center;margin-top:12px;color:var(--px-muted);font-size:12px">高频词: <span style="color:var(--px-text);font-weight:600">'
+          + esc(d.topKeyword.word) + '</span> (' + d.topKeyword.count + '次)</div>';
+      }
+      return h;
+    },
+  };
+
+  function renderFallback(cardData) {
+    return '<pre style="font-size:11px;color:var(--px-muted);white-space:pre-wrap;max-height:400px;overflow:auto">'
+      + esc(JSON.stringify(cardData, null, 2)) + '</pre>';
+  }
+
+  btnLoad.addEventListener('click', () => {
+    if (!selected) return;
+    const year = document.getElementById('cfg-year').value;
+    const params = new URLSearchParams({ year, chat: selected.username });
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('duo-content').style.display = 'none';
+
+    fetch('/api/wrapped/annual?' + params.toString())
+      .then(r => r.json().then(data => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        document.getElementById('loading').style.display = 'none';
+        if (!ok || data.error) {
+          alert('加载失败: ' + (data.error || '未知错误'));
+          return;
+        }
+        if (data.isGroup) {
+          alert('请选择私聊好友（当前匹配到群聊）');
+          return;
+        }
+        const container = document.getElementById('cards-container');
+        container.innerHTML = '';
+        const banner = document.createElement('div');
+        banner.className = 'wc';
+        banner.innerHTML = '<h3>你 × ' + esc(data.chatDisplayName || selected.display_name || '') + '</h3>'
+          + '<div class="wn">' + esc(String(data.year)) + ' 年双人互动报告'
+          + (data.year_adjusted ? '（已自动切到有数据的年份）' : '') + '</div>';
+        container.appendChild(banner);
+
+        for (const card of (data.cards || [])) {
+          const renderer = RENDERERS[card.kind] || renderFallback;
+          const div = document.createElement('div');
+          div.className = 'wc';
+          div.innerHTML = '<h3>' + esc(card.title) + '</h3>'
+            + (card.narrative ? '<div class="wn">' + esc(card.narrative) + '</div>' : '')
+            + renderer(card.data || {});
+          container.appendChild(div);
+        }
+        document.getElementById('duo-content').style.display = 'block';
+      })
+      .catch(err => {
+        document.getElementById('loading').style.display = 'none';
+        alert('加载失败: ' + err.message);
+      });
+  });
+
+  loadFriends();
+})();
+</script>
+{% endblock %}

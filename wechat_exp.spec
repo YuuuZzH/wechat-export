@@ -5,7 +5,7 @@ a = Analysis(
     ['src/main.py'],
     pathex=['src'],
     binaries=[],
-    datas=[('src', 'src'), ('README.md', '.'), ('tools/silk_decoder.exe', 'tools')],
+    datas=[('src', 'src'), ('README.md', '.'), ('docs/HTTP-API.md', 'docs'), ('tools/silk_decoder.exe', 'tools')],
     hiddenimports=['Crypto.Cipher.AES', 'Crypto.Util.Padding', 'flask', 'werkzeug', 'jinja2', 'markdown', 'blackboxprotobuf', 'zstandard', 'openpyxl', 'jieba', 'pypinyin', 'psutil', 'requests'],
     hookspath=[],
     hooksconfig={},

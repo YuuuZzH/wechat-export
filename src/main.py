@@ -1067,11 +1067,12 @@ def main():
                     help='导出模式（contacts = 导出通讯录为 xlsx/csv/html；'
                          'chatlab = 导出 ChatLab 标准格式，支持断点续传）')
     ep.add_argument('--format', '-f',
-                    choices=['jsonl', 'json', 'xlsx', 'csv', 'html', 'txt'],
+                    choices=['jsonl', 'json', 'xlsx', 'csv', 'html', 'txt',
+                             'md', 'markdown', 'pgsql', 'sql'],
                     default=None,
                     help='输出格式：chatlab 用 jsonl/json（默认 jsonl），'
                          'contacts 用 xlsx/csv/html（默认 xlsx），'
-                         'chat 用 txt/html/xlsx/csv（默认 txt）')
+                         'chat 用 txt/html/xlsx/csv/md/json/pgsql（默认 txt）')
     ep.add_argument('--keyword', '-k',
                     help='chat 模式：按消息内容过滤（空格=AND，|=OR）')
     ep.add_argument('--no-resume', action='store_true',

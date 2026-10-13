@@ -281,7 +281,20 @@ body:has(#cleanup-app) #content { max-width: none; padding: 0; margin: 0; }
 
 .chat-header { padding: 10px 16px; border-bottom: 1px solid var(--px-border); display: flex; align-items: center; gap: 10px; background: var(--px-panel); }
 .chat-header .header-avatar { width: 36px; height: 36px; border-radius: var(--radius-avatar); flex-shrink: 0; object-fit: cover; background: var(--px-panel-2); }
-.chat-header .header-info { display: flex; align-items: baseline; gap: 12px; }
+.chat-header .header-info { display: flex; align-items: baseline; gap: 12px; flex: 1; min-width: 0; }
+.chat-header .analyze-btn {
+  margin-left: auto; flex-shrink: 0;
+  padding: 4px 10px; font-size: 12px; text-decoration: none;
+  color: var(--px-text); background: var(--px-panel-2, #fff);
+  border: 2px solid var(--px-border); box-shadow: 2px 2px 0 var(--px-shadow);
+  font-family: var(--font-display, inherit);
+}
+.chat-header .analyze-btn:hover { background: var(--px-orange, #ff7a45); color: #fff; border-color: #e04570; }
+.chat-header .gi-btn {
+  flex-shrink: 0; padding: 4px 8px; font-size: 14px; cursor: pointer;
+  color: var(--px-text); background: var(--px-panel-2, #fff);
+  border: 2px solid var(--px-border); box-shadow: 2px 2px 0 var(--px-shadow);
+}
 .chat-name { font-size: 14px; font-weight: 700; color: var(--px-gold); }
 .chat-stats { font-size: 11px; color: var(--px-muted); }
 

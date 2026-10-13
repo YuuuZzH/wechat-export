@@ -13,8 +13,16 @@ class ChatHeader extends Component {
            style="width:36px;height:36px;border-radius:50%;object-fit:cover" />`
       : `<div class="header-avatar-fallback" style="${avatarFallbackStyle}">${avatarFallbackChar}</div>`;
     const statsText = data.stats || '';
-    const giBtn = data.type === 'group'
+    const isGroup = data.type === 'group';
+    const giBtn = isGroup
       ? '<button class="gi-btn" title="群信息">&#x2139;</button>'
+      : '';
+    const analyzeHref = isGroup
+      ? ('/group?chat=' + encodeURIComponent(data.id || ''))
+      : ('/duo?chat=' + encodeURIComponent(data.id || ''));
+    const analyzeTitle = isGroup ? '群聊画像' : '双人报告 / 私聊分析';
+    const analyzeBtn = data.id
+      ? `<a class="analyze-btn" href="${escapeAttr(analyzeHref)}" title="${escapeAttr(analyzeTitle)}">分析</a>`
       : '';
     return `
       ${avatarImg}
@@ -22,6 +30,7 @@ class ChatHeader extends Component {
         <span class="chat-name">${escapeHtml(data.name)}</span>
         <span class="chat-stats">${escapeHtml(statsText)}</span>
       </div>
+      ${analyzeBtn}
       ${giBtn}`;
   }
 

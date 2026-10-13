@@ -64,6 +64,7 @@ def _parse_contact_row(col_names: list, row: tuple) -> dict:
 
     display = pick_display_name(wxid, remark, nick, alias, wxid) or wxid
     is_group = wxid.endswith('@chatroom')
+    is_official = (not is_group) and wxid.startswith('gh_')
 
     contact = {
         'wxid': wxid,
@@ -75,6 +76,7 @@ def _parse_contact_row(col_names: list, row: tuple) -> dict:
         'msg_count': 0,
         'last_msg_time': None,
         'is_group': is_group,
+        'is_official': is_official,
     }
 
     # Phone detection from wxid（兜底；真实号码由 extra_buffer 覆盖，见 _attach_extra）
@@ -180,6 +182,7 @@ def _load_from_contacts_index(decrypted_dir: str) -> list:
             wxid = (d.get('wxid') or d.get('username') or '').strip()
             if not wxid:
                 continue
+            is_group = bool(d.get('is_group', 0)) or wxid.endswith('@chatroom')
             contact = {
                 'wxid': wxid,
                 'display_name': d.get('display_name') or wxid,
@@ -189,7 +192,8 @@ def _load_from_contacts_index(decrypted_dir: str) -> list:
                 'avatar_url': f'/api/avatar/{wxid}',
                 'msg_count': 0,
                 'last_msg_time': None,
-                'is_group': bool(d.get('is_group', 0)),
+                'is_group': is_group,
+                'is_official': (not is_group) and wxid.startswith('gh_'),
             }
             # Phone detection（兜底；真实号码由 extra_buffer 覆盖）
             phone = _phone_from_wxid(wxid)
@@ -327,8 +331,9 @@ def filter_contacts(contacts: list, q: str = '', sort: str = 'name',
         sort     — 'name' (default), 'msg_count', 'last_time'
         has_chat — '1' only contacts with messages, '0' only without, else all
         letter   — first letter of display_name
-        kind     — 'all' (default), 'contacts' (exclude groups),
-                   'groups' (groups only)
+        kind     — 'all' (default), 'contacts' (好友，排除群与公众号),
+                   'groups' (groups only), 'official' (公众号 gh_),
+                   'orphan' (由调用方先换成孤儿列表后再筛)
         label    — WeChat label (tag) name, matched case-insensitively against
                    the contact's ``labels`` list
 
@@ -340,7 +345,14 @@ def filter_contacts(contacts: list, q: str = '', sort: str = 'name',
 
     if kind == 'groups':
         out = [c for c in out if c.get('is_group')]
+    elif kind == 'official':
+        out = [c for c in out if c.get('is_official') or (
+            (not c.get('is_group')) and (c.get('wxid') or '').startswith('gh_'))]
     elif kind == 'contacts':
+        out = [c for c in out if (not c.get('is_group')) and not (
+            c.get('is_official') or (c.get('wxid') or '').startswith('gh_'))]
+    elif kind == 'orphan':
+        # 列表本身应已是孤儿；这里再排除群
         out = [c for c in out if not c.get('is_group')]
 
     q = (q or '').strip().lower()
@@ -380,6 +392,66 @@ def filter_contacts(contacts: list, q: str = '', sort: str = 'name',
         out.sort(key=lambda c: (c.get('display_name') or c.get('wxid') or '').lower())
 
     return out
+
+
+def get_orphan_contacts(decrypted_dir: str) -> list:
+    """可能的历史好友：chats 里有私聊记录，但通讯录里找不到对应条目。
+
+    尽力而为：依赖 chats.db；找不到则返回空列表。
+    """
+    chats_db = _find_chats_db(decrypted_dir)
+    if not chats_db:
+        return []
+    known = {c.get('wxid') for c in get_all_contacts(decrypted_dir) if c.get('wxid')}
+    orphans = []
+    try:
+        conn = sqlite3.connect(chats_db)
+        # Prefer columns that exist
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(chats)").fetchall()}
+        if 'chat_id' not in cols:
+            conn.close()
+            return []
+        select = 'chat_id, message_count, last_msg_time'
+        if 'display_name' in cols:
+            select += ', display_name'
+        rows = conn.execute(
+            f"SELECT {select} FROM chats WHERE message_count > 0"
+        ).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return []
+
+    for row in rows:
+        chat_id = (row[0] or '').strip()
+        if not chat_id or chat_id in known:
+            continue
+        if chat_id.endswith('@chatroom'):
+            continue
+        if chat_id.startswith('gh_'):
+            continue
+        # 系统/文件传输等噪音
+        if chat_id in ('filehelper', 'fmessage', 'medianote', 'floatbottle',
+                       'newsapp', 'weixin'):
+            continue
+        msg_count = int(row[1] or 0)
+        last_time = row[2]
+        display = row[3] if len(row) > 3 and row[3] else chat_id
+        orphans.append({
+            'wxid': chat_id,
+            'display_name': display,
+            'remark': '',
+            'nick_name': '',
+            'alias': '',
+            'avatar_url': f'/api/avatar/{chat_id}',
+            'msg_count': msg_count,
+            'last_msg_time': last_time,
+            'is_group': False,
+            'is_official': False,
+            'is_orphan': True,
+            'description': '通讯录中未找到，可能是已删除好友或残留会话',
+        })
+    orphans.sort(key=lambda c: c.get('msg_count') or 0, reverse=True)
+    return orphans
 
 
 def distinct_labels(contacts: list) -> list:

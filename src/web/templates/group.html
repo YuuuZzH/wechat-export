@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+{% block title %}群聊画像 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">群聊画像</h2>
+<p style="color:var(--px-muted);font-size:12px;margin:0 0 20px 0">选定一个群：成员发言排行、活跃时段、媒体占比</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:1"><label>年份</label><input id="cfg-year" type="number" value="2026" min="2011" max="2030"></div>
+    <div style="flex:2"><label>搜索群聊</label><input id="cfg-q" placeholder="群名 / chatroom id" autocomplete="off"></div>
+    <div><label>&nbsp;</label><button type="button" id="btn-refresh" class="btn btn-secondary">刷新列表</button></div>
+  </div>
+</div>
+
+<div class="config-panel" style="margin-top:12px">
+  <label style="display:block;margin-bottom:8px">选择群聊</label>
+  <div id="group-picker" class="grp-picker">
+    <div class="grp-picker-empty">加载中…</div>
+  </div>
+  <div id="sel-summary" class="grp-sel" style="display:none"></div>
+  <div style="margin-top:12px">
+    <button type="button" id="btn-load" class="btn btn-primary" disabled>生成群聊画像</button>
+  </div>
+</div>
+
+<div id="loading" style="display:none;text-align:center;padding:40px;color:var(--px-muted)">加载中…</div>
+<div id="grp-content" style="display:none">
+  <div id="cards-container" style="display:flex;flex-direction:column;gap:24px;margin-top:20px"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<style>
+.grp-picker {
+  max-height: 280px; overflow: auto;
+  background: var(--px-panel, #fff);
+  border: 2px solid var(--px-border);
+  border-radius: 0; padding: 6px;
+}
+.grp-picker-empty { color: var(--px-muted); font-size: 13px; padding: 24px; text-align: center; }
+.grp-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; cursor: pointer;
+  border: 2px solid transparent; margin: 0;
+  color: var(--px-text); background: transparent;
+}
+.grp-item:hover { background: rgba(255, 140, 100, 0.08); }
+.grp-item.selected { background: rgba(255, 140, 100, 0.18); border-color: var(--px-orange, #ff7a45); }
+.grp-item .name { flex: 1; font-size: 14px; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grp-item .count { color: var(--px-muted); font-size: 12px; flex-shrink: 0; }
+.grp-sel { margin-top: 8px; font-size: 13px; color: var(--px-orange, #ff7a45); font-weight: 600; }
+
+.wc { background: var(--px-panel, #143028); border: 1px solid var(--px-border, #2f6b54); border-radius: 0; padding: 24px; }
+.wc h3 { margin: 0 0 6px 0; color: var(--px-text, #e8f7ee); font-size: 18px; }
+.wc .wn { color: var(--px-muted, #8fb9a6); font-size: 13px; margin-bottom: 16px; line-height: 1.6; }
+.wc-empty { text-align: center; padding: 32px 20px; color: var(--px-muted); }
+.stat-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.stat-pill { background: rgba(0,0,0,0.06); border: 1px solid var(--px-border, #2f6b54); padding: 14px 18px; flex: 1; min-width: 100px; }
+.stat-pill .sv { font-size: 28px; font-weight: 700; color: var(--px-text); }
+.stat-pill .sl { font-size: 11px; color: var(--px-muted); margin-top: 2px; }
+.ht-wrap { overflow-x: auto; }
+.ht-grid { display: grid; grid-template-columns: 40px repeat(24, 1fr); gap: 2px; font-size: 10px; }
+.ht-cell { aspect-ratio: 1; min-width: 14px; }
+.ht-label { color: var(--px-muted); display: flex; align-items: center; font-size: 10px; }
+.kw-cloud { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; padding: 12px 0; }
+.rank-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+.rank-idx { width: 28px; color: var(--px-muted); flex-shrink: 0; text-align: right; }
+.rank-name { width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--px-text); flex-shrink: 0; }
+.rank-track { flex: 1; height: 14px; background: rgba(0,0,0,0.08); border: 1px solid var(--px-border); }
+.rank-fill { height: 100%; background: var(--px-orange, #ff7a45); }
+.rank-val { width: 72px; text-align: right; color: var(--px-text); font-size: 12px; flex-shrink: 0; }
+</style>
+<script>
+(function () {
+  let selected = null;
+  let chatsCache = [];
+  let loadTimer = null;
+  const picker = document.getElementById('group-picker');
+  const summary = document.getElementById('sel-summary');
+  const btnLoad = document.getElementById('btn-load');
+  const qInput = document.getElementById('cfg-q');
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+  function fmt(n) { return n != null ? Number(n).toLocaleString() : '—'; }
+  function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '—'; }
+
+  function renderPicker() {
+    if (!chatsCache.length) {
+      picker.innerHTML = '<div class="grp-picker-empty">暂无群聊。请先完成「一键备份」。</div>';
+      return;
+    }
+    let html = '';
+    for (const c of chatsCache) {
+      const sel = selected && selected.username === c.username;
+      html += '<div class="grp-item' + (sel ? ' selected' : '') + '" data-u="' + esc(c.username) + '">'
+        + '<div class="name">' + esc(c.display_name || c.username) + '</div>'
+        + '<div class="count">' + fmt(c.msg_count || 0) + ' 条</div></div>';
+    }
+    picker.innerHTML = html || '<div class="grp-picker-empty">没有匹配的群聊</div>';
+    picker.querySelectorAll('.grp-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const u = el.getAttribute('data-u');
+        selected = chatsCache.find(c => c.username === u) || null;
+        renderPicker();
+        if (selected) {
+          summary.style.display = 'block';
+          summary.textContent = '已选：' + (selected.display_name || selected.username);
+          btnLoad.disabled = false;
+        }
+      });
+    });
+  }
+
+  const urlParams = new URLSearchParams(location.search);
+  const preChat = (urlParams.get('chat') || '').trim();
+  const preYear = urlParams.get('year');
+  if (preYear && /^\d{4}$/.test(preYear)) {
+    document.getElementById('cfg-year').value = preYear;
+  }
+
+  function loadGroups() {
+    const q = qInput.value.trim();
+    picker.innerHTML = '<div class="grp-picker-empty">加载中…</div>';
+    let url = '/api/export/chats?kind=group';
+    if (q) url += '&q=' + encodeURIComponent(q);
+    else if (preChat) url += '&q=' + encodeURIComponent(preChat);
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        chatsCache = (data && data.chats) || [];
+        if (selected) {
+          const still = chatsCache.find(c => c.username === selected.username);
+          if (!still) selected = null;
+        }
+        if (!selected && preChat) {
+          selected = chatsCache.find(c => c.username === preChat)
+            || chatsCache.find(c => (c.display_name || '') === preChat)
+            || null;
+        }
+        if (selected) {
+          summary.style.display = 'block';
+          summary.textContent = '已选：' + (selected.display_name || selected.username);
+          btnLoad.disabled = false;
+        } else {
+          summary.style.display = 'none';
+          btnLoad.disabled = true;
+        }
+        renderPicker();
+        if (preChat && selected && !window.__grpAutoloaded) {
+          window.__grpAutoloaded = true;
+          btnLoad.click();
+        }
+      })
+      .catch(err => {
+        picker.innerHTML = '<div class="grp-picker-empty">加载失败：' + esc(err.message) + '</div>';
+      });
+  }
+
+  qInput.addEventListener('input', () => {
+    clearTimeout(loadTimer);
+    loadTimer = setTimeout(loadGroups, 280);
+  });
+  document.getElementById('btn-refresh').addEventListener('click', loadGroups);
+
+  function renderStatPills(items) {
+    return '<div class="stat-row">' + items.map(function(i) {
+      return '<div class="stat-pill"><div class="sv">' + i.v + '</div><div class="sl">' + i.l + '</div></div>';
+    }).join('') + '</div>';
+  }
+
+  function renderHeatmap(wl, hl, matrix) {
+    let max = 1;
+    for (let r = 0; r < 7; r++) for (let c = 0; c < 24; c++) max = Math.max(max, matrix[r][c]);
+    let h = '<div class="ht-wrap"><div class="ht-grid">';
+    h += '<div class="ht-label"></div>';
+    for (let c = 0; c < 24; c++) h += '<div class="ht-label" style="justify-content:center">' + hl[c] + '</div>';
+    for (let r = 0; r < 7; r++) {
+      h += '<div class="ht-label">' + wl[r] + '</div>';
+      for (let c = 0; c < 24; c++) {
+        const v = matrix[r][c];
+        const alpha = max > 0 ? v / max : 0;
+        const color = alpha === 0 ? 'transparent' : 'rgb(' + Math.round(30 + 180 * alpha) + ',' + Math.round(130 + 30 * alpha) + ',' + Math.round(255 - 100 * alpha) + ')';
+        h += '<div class="ht-cell" style="background:' + color + '" title="' + wl[r] + ' ' + hl[c] + ': ' + v + '条"></div>';
+      }
+    }
+    return h + '</div></div>';
+  }
+
+  function renderRank(members) {
+    if (!members || !members.length) return '<div class="wc-empty">暂无发言数据</div>';
+    const max = members[0].count || 1;
+    let h = '';
+    members.forEach(function(m, i) {
+      h += '<div class="rank-row">'
+        + '<div class="rank-idx">' + (i + 1) + '</div>'
+        + '<div class="rank-name" title="' + esc(m.name) + '">' + esc(m.name) + '</div>'
+        + '<div class="rank-track"><div class="rank-fill" style="width:' + (m.count / max * 100) + '%"></div></div>'
+        + '<div class="rank-val">' + fmt(m.count) + (m.share != null ? ' · ' + pct(m.share) : '') + '</div></div>';
+    });
+    return h;
+  }
+
+  const RENDERERS = {
+    'global/overview': function(d) {
+      return renderStatPills([
+        {v: fmt(d.totalMessages), l: '总消息'},
+        {v: d.activeDays, l: '活跃天数'},
+        {v: fmt(d.messagesPerDay != null ? Number(d.messagesPerDay).toFixed(0) : '—'), l: '日均'},
+        {v: fmt(d.sentMediaCount), l: '图片/视频'},
+        {v: fmt(d.sentStickerCount), l: '表情'},
+        {v: d.mostActiveHour != null ? d.mostActiveHour + ':00' : '—', l: '最活跃时段'},
+        {v: d.mostActiveWeekdayName || '—', l: '最活跃星期'},
+      ]);
+    },
+    'group/members': function(d) {
+      let h = renderStatPills([
+        {v: fmt(d.uniqueSpeakers), l: '发言人数'},
+        {v: fmt(d.totalMessages), l: '消息总数'},
+      ]);
+      h += renderRank(d.members || []);
+      return h;
+    },
+    'group/media': function(d) {
+      let h = renderStatPills([
+        {v: fmt(d.mediaCount), l: '图片/视频'},
+        {v: fmt(d.stickerCount), l: '表情'},
+        {v: fmt(d.voiceCount), l: '语音'},
+        {v: pct(d.mediaShare), l: '媒体占比'},
+      ]);
+      if (d.types && d.types.length) {
+        h += '<div style="margin:12px 0 6px;font-size:12px;color:var(--px-muted)">类型分布</div>';
+        const max = d.types[0].count || 1;
+        for (const t of d.types) {
+          h += '<div class="rank-row"><div class="rank-name" style="width:88px">' + esc(t.name) + '</div>'
+            + '<div class="rank-track"><div class="rank-fill" style="width:' + (t.count / max * 100) + '%"></div></div>'
+            + '<div class="rank-val">' + fmt(t.count) + '</div></div>';
+        }
+      }
+      if (d.topMediaMembers && d.topMediaMembers.length) {
+        h += '<div style="margin:16px 0 6px;font-size:12px;color:var(--px-muted)">发媒体最多</div>';
+        h += renderRank(d.topMediaMembers.map(function(m) {
+          return {name: m.name, count: m.count};
+        }));
+      }
+      return h;
+    },
+    'time/weekday_hour_heatmap': function(d) {
+      if (!d.matrix || !d.totalMessages) return '<div class="wc-empty">今年没有聊天数据</div>';
+      return '<div style="margin-bottom:10px;color:var(--px-muted);font-size:12px">共 ' + fmt(d.totalMessages) + ' 条消息</div>'
+        + renderHeatmap(d.weekdayLabels, d.hourLabels, d.matrix);
+    },
+    'text/keywords_wordcloud': function(d) {
+      if (!d.keywords || !d.keywords.length) return '<div class="wc-empty">暂无关键词数据</div>';
+      let h = '<div class="kw-cloud">';
+      for (const kw of d.keywords) {
+        const size = Math.round(12 + kw.weight * 28);
+        const alpha = 0.4 + kw.weight * 0.6;
+        h += '<span style="font-size:' + size + 'px;color:rgba(224,69,112,' + alpha.toFixed(2) + ');padding:2px 6px;display:inline-block" title="'
+          + esc(kw.word) + ': ' + kw.count + '次">' + esc(kw.word) + '</span>';
+      }
+      h += '</div>';
+      if (d.topKeyword) {
+        h += '<div style="text-align:center;margin-top:12px;color:var(--px-muted);font-size:12px">高频词: <span style="color:var(--px-text);font-weight:600">'
+          + esc(d.topKeyword.word) + '</span> (' + d.topKeyword.count + '次)</div>';
+      }
+      return h;
+    },
+  };
+
+  function renderFallback(cardData) {
+    return '<pre style="font-size:11px;color:var(--px-muted);white-space:pre-wrap;max-height:400px;overflow:auto">'
+      + esc(JSON.stringify(cardData, null, 2)) + '</pre>';
+  }
+
+  btnLoad.addEventListener('click', () => {
+    if (!selected) return;
+    const year = document.getElementById('cfg-year').value;
+    const params = new URLSearchParams({ year, chat: selected.username });
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('grp-content').style.display = 'none';
+
+    fetch('/api/wrapped/annual?' + params.toString())
+      .then(r => r.json().then(data => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        document.getElementById('loading').style.display = 'none';
+        if (!ok || data.error) {
+          alert('加载失败: ' + (data.error || '未知错误'));
+          return;
+        }
+        if (data.isDuo || data.isGroup === false) {
+          alert('请选择群聊（当前匹配到私聊）');
+          return;
+        }
+        const container = document.getElementById('cards-container');
+        container.innerHTML = '';
+        const banner = document.createElement('div');
+        banner.className = 'wc';
+        banner.innerHTML = '<h3>' + esc(data.chatDisplayName || selected.display_name || '') + '</h3>'
+          + '<div class="wn">' + esc(String(data.year)) + ' 年群聊画像'
+          + (data.year_adjusted ? '（已自动切到有数据的年份）' : '') + '</div>';
+        container.appendChild(banner);
+
+        for (const card of (data.cards || [])) {
+          const renderer = RENDERERS[card.kind] || renderFallback;
+          const div = document.createElement('div');
+          div.className = 'wc';
+          div.innerHTML = '<h3>' + esc(card.title) + '</h3>'
+            + (card.narrative ? '<div class="wn">' + esc(card.narrative) + '</div>' : '')
+            + renderer(card.data || {});
+          container.appendChild(div);
+        }
+        document.getElementById('grp-content').style.display = 'block';
+      })
+      .catch(err => {
+        document.getElementById('loading').style.display = 'none';
+        alert('加载失败: ' + err.message);
+      });
+  });
+
+  loadGroups();
+})();
+</script>
+{% endblock %}

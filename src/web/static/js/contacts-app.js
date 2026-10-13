@@ -21,9 +21,12 @@
     AddressBookStore.data.error = null;
     listComponent._renderState();
     try {
+      var tab = AddressBookStore.data.activeTab;
+      var kind = (tab === 'official' || tab === 'orphan') ? tab : 'contacts';
       var params = {
         q: AddressBookStore.data.searchQuery,
         label: AddressBookStore.data.labelFilter,
+        kind: kind,
         page: AddressBookStore.data.page,
         per_page: AddressBookStore.data.perPage,
       };
@@ -59,16 +62,21 @@
     AddressBookStore.emit('contacts-loaded');
   }
 
-  // Listen for tab changes to lazy-load groups
+  // Listen for tab changes to lazy-load groups / reload friend-like tabs
   AddressBookStore.on('tab-changed', function(tab) {
-    if (tab === 'groups' && !_groupsLoaded) {
-      AddressBookStore.data.loading = true;
-      listComponent._renderState();
-      loadGroups().then(function() {
-        AddressBookStore.data.loading = false;
-        AddressBookStore.emit('contacts-loaded');
-      });
+    if (tab === 'groups') {
+      if (!_groupsLoaded) {
+        AddressBookStore.data.loading = true;
+        listComponent._renderState();
+        loadGroups().then(function() {
+          AddressBookStore.data.loading = false;
+          AddressBookStore.emit('contacts-loaded');
+        });
+      }
+      return;
     }
+    AddressBookStore.data.page = 1;
+    loadContacts();
   });
 
   // Go to specific page
@@ -132,7 +140,12 @@
         q: AddressBookStore.data.searchQuery,
         label: AddressBookStore.data.labelFilter,
         // 联系人页排除群聊、群聊页只导群聊，与列表展示保持一致
-        kind: AddressBookStore.data.activeTab === 'groups' ? 'groups' : 'contacts',
+        kind: (function () {
+          var t = AddressBookStore.data.activeTab;
+          if (t === 'groups') return 'groups';
+          if (t === 'official' || t === 'orphan') return t;
+          return 'contacts';
+        })(),
       });
 
       var original = exportBtn.textContent;

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}使用说明 — WeChat Export{% endblock %}
+{% block title %}{{ page_title or '使用说明 — WeChat Export' }}{% endblock %}
 {% block head %}
 <style>
 .docs-wrap {
@@ -76,7 +76,11 @@
 {% endblock %}
 {% block content %}
 <article class="docs-wrap">
-  <p class="docs-meta">本页内容与仓库 <code>README.md</code> 同步 · 维护者 yuuu · <a href="https://github.com/yuuuzzh/wechat-export" target="_blank" rel="noopener">GitHub</a></p>
+  {% if page_title and 'HTTP API' in page_title %}
+  <p class="docs-meta">本页内容与仓库 <code>docs/HTTP-API.md</code> 同步 · 本地接口无鉴权，勿对公网开放 · <a href="/docs">使用说明</a></p>
+  {% else %}
+  <p class="docs-meta">本页内容与仓库 <code>README.md</code> 同步 · 维护者 yuuu · <a href="https://github.com/yuuuzzh/wechat-export" target="_blank" rel="noopener">GitHub</a> · <a href="/api-docs">HTTP API</a></p>
+  {% endif %}
   {{ body_html | safe }}
 </article>
 {% endblock %}

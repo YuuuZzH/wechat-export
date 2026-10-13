@@ -234,6 +234,113 @@ const RENDERERS = {
   return h;
 },
 
+'duo/balance': function(d) {
+  function bars(meL, peerL, meV, peerV) {
+    const max = Math.max(meV || 0, peerV || 0, 1);
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px">'
+      + '<div style="width:72px;color:#8fb9a6">' + esc(meL) + '</div>'
+      + '<div style="flex:1;height:14px;background:#0a1612;border:1px solid #2f6b54"><div style="height:100%;width:'
+      + ((meV || 0) / max * 100) + '%;background:#ff7a45"></div></div>'
+      + '<div style="width:64px;text-align:right;font-size:12px">' + fmt(meV) + '</div></div>'
+      + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px">'
+      + '<div style="width:72px;color:#8fb9a6">' + esc(peerL) + '</div>'
+      + '<div style="flex:1;height:14px;background:#0a1612;border:1px solid #2f6b54"><div style="height:100%;width:'
+      + ((peerV || 0) / max * 100) + '%;background:#e04570"></div></div>'
+      + '<div style="width:64px;text-align:right;font-size:12px">' + fmt(peerV) + '</div></div>';
+  }
+  let h = renderStatPills([
+    {v: pct(d.meShare), l: '我占比'},
+    {v: pct(d.peerShare), l: (d.peerName || '对方') + '占比'},
+    {v: fmt(d.meChars), l: '我字数'},
+    {v: fmt(d.peerChars), l: '对方字数'},
+  ]);
+  h += '<div style="margin:8px 0 6px;font-size:12px;color:#8fb9a6">消息条数</div>';
+  h += bars('我', d.peerName || '对方', d.meMessages, d.peerMessages);
+  h += '<div style="margin:12px 0 6px;font-size:12px;color:#8fb9a6">字数</div>';
+  h += bars('我', d.peerName || '对方', d.meChars, d.peerChars);
+  return h;
+},
+
+'duo/reply_speed': function(d) {
+  const me = d.me || {};
+  const peer = d.peer || {};
+  if (!me.replies && !peer.replies) {
+    return '<div class="wc-empty"><div class="we-icon">⚡</div><div>暂无可统计的回复间隔</div></div>';
+  }
+  return renderStatPills([
+    {v: fmt(me.replies), l: '我回复次数'},
+    {v: hms(me.medianSeconds != null ? Math.round(me.medianSeconds) : null), l: '我中位回复'},
+    {v: fmt(peer.replies), l: '对方回复次数'},
+    {v: hms(peer.medianSeconds != null ? Math.round(peer.medianSeconds) : null), l: '对方中位回复'},
+  ]) + renderStatPills([
+    {v: hms(me.avgSeconds != null ? Math.round(me.avgSeconds) : null), l: '我平均'},
+    {v: hms(me.minSeconds), l: '我最快'},
+    {v: hms(peer.avgSeconds != null ? Math.round(peer.avgSeconds) : null), l: '对方平均'},
+    {v: hms(peer.minSeconds), l: '对方最快'},
+  ]);
+},
+
+'duo/types': function(d) {
+  function list(items, title) {
+    if (!items || !items.length) return '<div class="wc-empty">暂无数据</div>';
+    const max = items[0].count || 1;
+    let h = '<div style="font-size:12px;color:#8fb9a6;margin-bottom:8px">' + esc(title) + '</div>';
+    for (const t of items) {
+      h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px">'
+        + '<div style="width:88px;color:#8fb9a6">' + esc(t.name) + '</div>'
+        + '<div style="flex:1;height:14px;background:#0a1612;border:1px solid #2f6b54"><div style="height:100%;width:'
+        + (t.count / max * 100) + '%;background:#ff7a45"></div></div>'
+        + '<div style="width:64px;text-align:right;font-size:12px">' + fmt(t.count) + '</div></div>';
+    }
+    return h;
+  }
+  return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">'
+    + '<div>' + list(d.meTypes, '我发送的类型') + '</div>'
+    + '<div>' + list(d.peerTypes, (d.peerName || '对方') + '发送的类型') + '</div></div>';
+},
+
+'group/members': function(d) {
+  const members = d.members || [];
+  if (!members.length) return '<div class="wc-empty"><div class="we-icon">👥</div><div>暂无发言数据</div></div>';
+  let h = renderStatPills([
+    {v: fmt(d.uniqueSpeakers), l: '发言人数'},
+    {v: fmt(d.totalMessages), l: '消息总数'},
+  ]);
+  const max = members[0].count || 1;
+  members.forEach(function(m, i) {
+    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px">'
+      + '<div style="width:28px;color:#8fb9a6;text-align:right">' + (i + 1) + '</div>'
+      + '<div style="width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(m.name) + '</div>'
+      + '<div style="flex:1;height:14px;background:#0a1612;border:1px solid #2f6b54"><div style="height:100%;width:'
+      + (m.count / max * 100) + '%;background:#ff7a45"></div></div>'
+      + '<div style="width:72px;text-align:right;font-size:12px">' + fmt(m.count)
+      + (m.share != null ? ' · ' + pct(m.share) : '') + '</div></div>';
+  });
+  return h;
+},
+
+'group/media': function(d) {
+  let h = renderStatPills([
+    {v: fmt(d.mediaCount), l: '图片/视频'},
+    {v: fmt(d.stickerCount), l: '表情'},
+    {v: fmt(d.voiceCount), l: '语音'},
+    {v: pct(d.mediaShare), l: '媒体占比'},
+  ]);
+  const types = d.types || [];
+  if (types.length) {
+    const max = types[0].count || 1;
+    h += '<div style="margin:12px 0 6px;font-size:12px;color:#8fb9a6">类型分布</div>';
+    for (const t of types) {
+      h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:13px">'
+        + '<div style="width:88px;color:#8fb9a6">' + esc(t.name) + '</div>'
+        + '<div style="flex:1;height:14px;background:#0a1612;border:1px solid #2f6b54"><div style="height:100%;width:'
+        + (t.count / max * 100) + '%;background:#ff7a45"></div></div>'
+        + '<div style="width:64px;text-align:right;font-size:12px">' + fmt(t.count) + '</div></div>';
+    }
+  }
+  return h;
+},
+
 'text/message_chars': function(d) {
   let h = renderStatPills([
     {v: fmt(d.sentChars), l: '发送字数'},

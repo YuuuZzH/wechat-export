@@ -278,7 +278,7 @@ def export_chat():
       contact / contacts: 单个或多个会话 username
       keyword: 关键词（空格=AND，| =OR）
       date_start / date_end: YYYY-MM-DD
-      format: txt | html | xlsx | csv | chatlab-jsonl | chatlab-json
+      format: txt | html | xlsx | csv | md | json | pgsql | chatlab-jsonl | chatlab-json
       merge: 多会话 txt/html 是否合并（xlsx/csv 始终合并）
       include_asr: 是否带上已转写语音文字
     """
@@ -292,7 +292,7 @@ def export_chat():
     fmt = (data.get('format') or 'txt').strip().lower()
     merge = data.get('merge')
     if merge is None:
-        merge = fmt in ('xlsx', 'csv', 'html')
+        merge = fmt in ('xlsx', 'csv', 'html', 'json', 'pgsql', 'sql')
 
     decrypted_dir = _decrypted_dir()
     # 注意：后台线程没有 Flask 应用上下文，配置必须在此处（请求线程内）取出
@@ -524,7 +524,7 @@ def export_chat():
             def _progress(pct, msg):
                 push('export', msg, 0.25 + 0.7 * (pct / 100.0))
 
-            if len(targets) == 1 and fmt not in ('xlsx', 'csv'):
+            if len(targets) == 1 and fmt not in ('xlsx', 'csv', 'json', 'pgsql', 'sql'):
                 count, filepath = _export_one(
                     targets[0], out_dir,
                     start_ts=start_ts, end_ts=end_ts, keyword=keyword or None,
@@ -544,7 +544,7 @@ def export_chat():
                 note = ''
                 if keyword:
                     note = '已按关键词过滤：%s' % keyword
-                if len(targets) > 1 and fmt in ('xlsx', 'csv', 'html'):
+                if len(targets) > 1 and fmt in ('xlsx', 'csv', 'html', 'json', 'pgsql', 'sql', 'md', 'markdown'):
                     note = (note + '；' if note else '') + '多会话已按时间平铺合并'
                 push.done({'msg_count': count,
                            'download_url': '/api/export/download/' + fname,

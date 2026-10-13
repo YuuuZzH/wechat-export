@@ -13,6 +13,7 @@ from engine.services.chat import get_contacts
 from engine.services.message import query_messages, query_message_detail, get_chat_stats, get_chat_dates
 from engine.services.media import serve_media, serve_hardlink_media, serve_voice, transcribe_voice, transcribe_voice_cached, decrypt_emoticon_aes_cbc
 from engine.services.address_book import (get_all_contacts, get_all_groups,
+                                          get_orphan_contacts,
                                           filter_contacts, distinct_labels)
 from engine.services.contact_extra import load_labels
 from engine.services.name_resolver import _find_contact_db
@@ -414,19 +415,25 @@ def address_book():
         sort     — 'name' (default), 'msg_count', 'last_time'
         has_chat — '1' (only with chats), '0' (only without)
         letter   — filter by first letter of display_name
-        kind     — 'all' (default), 'contacts' (exclude groups), 'groups' (groups only)
+        kind     — 'all' (default), 'contacts' (好友), 'groups', 'official' (公众号),
+                   'orphan' (可能的历史好友)
         label    — filter by WeChat label/tag name (e.g. 'only_work')
         page     — page number (default 1)
         per_page — items per page (default 100, max 500)
     """
     decrypted_dir, wxid, db_dir = _cfg()
+    kind = request.args.get('kind', 'all')
+    if kind == 'orphan':
+        base = get_orphan_contacts(decrypted_dir)
+    else:
+        base = get_all_contacts(decrypted_dir)
     contacts = filter_contacts(
-        get_all_contacts(decrypted_dir),
+        base,
         q=request.args.get('q', ''),
         sort=request.args.get('sort', 'name'),
         has_chat=request.args.get('has_chat'),
         letter=request.args.get('letter', ''),
-        kind=request.args.get('kind', 'all'),
+        kind=kind,
         label=request.args.get('label'),
     )
 
@@ -528,8 +535,9 @@ def address_book_export():
     kind = request.args.get('kind', 'all')
     fmt = (request.args.get('format') or 'csv').strip().lower().lstrip('.')
 
+    base = get_orphan_contacts(decrypted_dir) if kind == 'orphan' else get_all_contacts(decrypted_dir)
     contacts = filter_contacts(
-        get_all_contacts(decrypted_dir),
+        base,
         q=request.args.get('q', ''),
         sort=request.args.get('sort', 'name'),
         has_chat=request.args.get('has_chat'),

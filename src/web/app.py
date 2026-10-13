@@ -48,6 +48,30 @@ def _screenshots_dir() -> str | None:
     return None
 
 
+def _markdown_to_html(text: str, *, rewrite_shots: bool = False) -> str:
+    try:
+        import markdown
+        body = markdown.markdown(
+            text,
+            extensions=['tables', 'fenced_code', 'nl2br', 'sane_lists'],
+            output_format='html5',
+        )
+    except Exception as e:
+        logger.warning('markdown render failed: %s', e)
+        body = '<pre>' + (
+            text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        ) + '</pre>'
+    if rewrite_shots:
+        shots = _screenshots_dir()
+        if shots:
+            body = body.replace('src="screenshots/', 'src="/docs-assets/')
+            body = body.replace('src="./screenshots/', 'src="/docs-assets/')
+        else:
+            body = body.replace('src="screenshots/', f'src="{_GITHUB_RAW_SHOTS}')
+            body = body.replace('src="./screenshots/', f'src="{_GITHUB_RAW_SHOTS}')
+    return re.sub(r'^\s*', '', body, count=1)
+
+
 def _render_readme_html() -> str:
     """Render repository README.md for the in-app docs page."""
     text = None
@@ -63,29 +87,38 @@ def _render_readme_html() -> str:
             '<a href="https://github.com/yuuuzzh/wechat-export" target="_blank" rel="noopener">'
             'GitHub 仓库</a>。</p>'
         )
-    try:
-        import markdown
-        body = markdown.markdown(
-            text,
-            extensions=['tables', 'fenced_code', 'nl2br', 'sane_lists'],
-            output_format='html5',
-        )
-    except Exception as e:
-        logger.warning('markdown render failed: %s', e)
-        body = '<pre>' + (
-            text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-        ) + '</pre>'
+    return _markdown_to_html(text, rewrite_shots=True)
 
-    shots = _screenshots_dir()
-    if shots:
-        body = body.replace('src="screenshots/', 'src="/docs-assets/')
-        body = body.replace('src="./screenshots/', 'src="/docs-assets/')
-    else:
-        body = body.replace('src="screenshots/', f'src="{_GITHUB_RAW_SHOTS}')
-        body = body.replace('src="./screenshots/', f'src="{_GITHUB_RAW_SHOTS}')
-    # Drop BOM / leading noise if any
-    body = re.sub(r'^\s*', '', body, count=1)
-    return body
+
+def _http_api_doc_candidates():
+    """Possible locations for docs/HTTP-API.md (dev / PyInstaller)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.abspath(os.path.join(here, '..', '..'))
+    paths = [
+        os.path.join(root, 'docs', 'HTTP-API.md'),
+        os.path.join(os.getcwd(), 'docs', 'HTTP-API.md'),
+    ]
+    meipass = getattr(sys, '_MEIPASS', None)
+    if meipass:
+        paths.insert(0, os.path.join(meipass, 'docs', 'HTTP-API.md'))
+        paths.insert(1, os.path.join(meipass, 'HTTP-API.md'))
+    return paths
+
+
+def _render_http_api_html() -> str:
+    text = None
+    for path in _http_api_doc_candidates():
+        if os.path.isfile(path):
+            with open(path, encoding='utf-8') as f:
+                text = f.read()
+            break
+    if text is None:
+        return (
+            '<h1>HTTP API</h1>'
+            '<p>未找到 <code>docs/HTTP-API.md</code>。'
+            '请查看仓库 <code>docs/</code> 目录。</p>'
+        )
+    return _markdown_to_html(text)
 
 
 def _register_blueprint(app: Flask, label: str, register):
@@ -329,11 +362,28 @@ def create_app(decrypted_dir: str, wxid: str = None, db_dir: str = None) -> Flas
     def wrapped_page():
         return render_template('wrapped.html')
 
+    @app.route('/duo')
+    def duo_page():
+        return render_template('duo.html')
+
+    @app.route('/group')
+    def group_page():
+        return render_template('group.html')
+
     @app.route('/manual')
     @app.route('/docs')
     def docs_page():
         """In-app docs = live README.md (replaces the old static manual.html)."""
         return render_template('docs.html', body_html=_render_readme_html())
+
+    @app.route('/api-docs')
+    def api_docs_page():
+        """Developer-facing HTTP API reference (docs/HTTP-API.md)."""
+        return render_template(
+            'docs.html',
+            body_html=_render_http_api_html(),
+            page_title='HTTP API — WeChat Export',
+        )
 
     @app.route('/docs-assets/<path:filename>')
     def docs_assets(filename):

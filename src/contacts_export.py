@@ -49,8 +49,10 @@ sex_label = contact_extra.sex_label
 
 KIND_LABELS = {
     'all': '联系人与群聊',
-    'contacts': '仅联系人',
+    'contacts': '仅好友',
     'groups': '仅群聊',
+    'official': '公众号',
+    'orphan': '可能的历史好友',
 }
 
 
@@ -291,7 +293,12 @@ def render(contacts: list, fmt: str = 'xlsx', **kwargs) -> bytes:
 def default_filename(fmt: str = 'xlsx', kind: str = 'all', now=None) -> str:
     fmt = _normalize_format(fmt)
     now = now or datetime.now(TZ)
-    stem = 'groups' if kind == 'groups' else 'contacts'
+    stem = {
+        'groups': 'groups',
+        'official': 'official_accounts',
+        'orphan': 'orphan_contacts',
+        'contacts': 'contacts',
+    }.get(kind, 'contacts')
     return '%s_%s.%s' % (stem, now.strftime('%Y%m%d_%H%M%S'), fmt)
 
 

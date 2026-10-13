@@ -15,7 +15,41 @@ from engine.services.message import _build_sender_map
 from engine.services.sender_model import (ShardSenderModel, load_name2id)
 
 # 导出会话格式（chatlab 走独立模块）
-CHAT_FORMATS = ('txt', 'html', 'xlsx', 'csv')
+CHAT_FORMATS = ('txt', 'html', 'xlsx', 'csv', 'md', 'markdown', 'json', 'pgsql', 'sql')
+# 别名 → 规范名
+_FORMAT_ALIASES = {
+    'markdown': 'md',
+    'sql': 'pgsql',
+}
+
+
+def _normalize_fmt(fmt):
+    fmt = (fmt or 'txt').strip().lower()
+    fmt = _FORMAT_ALIASES.get(fmt, fmt)
+    if fmt not in ('txt', 'html', 'xlsx', 'csv', 'md', 'json', 'pgsql'):
+        return 'txt'
+    return fmt
+
+
+def _fmt_ext(fmt):
+    return {'pgsql': 'sql', 'md': 'md'}.get(fmt, fmt)
+
+
+def _write_by_fmt(fmt, out_path, messages, meta):
+    if fmt == 'html':
+        _write_html_conversation(out_path, messages, meta)
+    elif fmt == 'xlsx':
+        _write_xlsx(out_path, messages, meta)
+    elif fmt == 'csv':
+        _write_csv(out_path, messages, meta)
+    elif fmt == 'md':
+        _write_markdown(out_path, messages, meta)
+    elif fmt == 'json':
+        _write_json(out_path, messages, meta)
+    elif fmt == 'pgsql':
+        _write_pgsql(out_path, messages, meta)
+    else:
+        _write_txt(out_path, messages, meta)
 
 
 def _extract_own_wxid(tables: list) -> str:
@@ -326,9 +360,7 @@ def export_chat(chat_info, out_dir, start_ts=None, end_ts=None, keyword=None,
     if print_fn is None:
         print_fn = print
 
-    fmt = (fmt or 'txt').strip().lower()
-    if fmt not in CHAT_FORMATS:
-        fmt = 'txt'
+    fmt = _normalize_fmt(fmt)
 
     display = display_name or chat_info.get("display_name") or chat_info["username"]
     messages = collect_messages(
@@ -349,16 +381,9 @@ def export_chat(chat_info, out_dir, start_ts=None, end_ts=None, keyword=None,
 
     safe_name = re.sub(r'[<>:"/\\|?*]', '_', display)[:40] or 'chat'
     os.makedirs(out_dir, exist_ok=True)
-    out_path = os.path.join(out_dir, f"{safe_name}.{fmt}")
-
-    if fmt == 'html':
-        _write_html_conversation(out_path, messages, meta)
-    elif fmt == 'xlsx':
-        _write_xlsx(out_path, messages, meta)
-    elif fmt == 'csv':
-        _write_csv(out_path, messages, meta)
-    else:
-        _write_txt(out_path, messages, meta)
+    ext = _fmt_ext(fmt)
+    out_path = os.path.join(out_dir, f"{safe_name}.{ext}")
+    _write_by_fmt(fmt, out_path, messages, meta)
 
     return len(messages), out_path
 
@@ -379,9 +404,7 @@ def export_chats(chat_infos, out_dir, start_ts=None, end_ts=None, keyword=None,
     if progress_fn is None:
         progress_fn = lambda pct, msg: None
 
-    fmt = (fmt or 'txt').strip().lower()
-    if fmt not in CHAT_FORMATS:
-        fmt = 'txt'
+    fmt = _normalize_fmt(fmt)
 
     os.makedirs(out_dir, exist_ok=True)
     all_msgs = []
@@ -421,24 +444,14 @@ def export_chats(chat_infos, out_dir, start_ts=None, end_ts=None, keyword=None,
         "chat_count": len(chat_infos),
     }
 
-    # 表格类：始终按时间平铺合并
-    if fmt in ('xlsx', 'csv') or (merge and len(chat_infos) >= 1 and fmt in ('txt', 'html')):
-        if fmt == 'xlsx':
-            name = f"messages_{stamp}{kw_tag}.xlsx"
-            out_path = os.path.join(out_dir, name)
-            _write_xlsx(out_path, all_msgs, meta)
-        elif fmt == 'csv':
-            name = f"messages_{stamp}{kw_tag}.csv"
-            out_path = os.path.join(out_dir, name)
-            _write_csv(out_path, all_msgs, meta)
-        elif fmt == 'html':
-            name = f"messages_{stamp}{kw_tag}.html"
-            out_path = os.path.join(out_dir, name)
-            _write_html_conversation(out_path, all_msgs, meta)
-        else:
-            name = f"messages_{stamp}{kw_tag}.txt"
-            out_path = os.path.join(out_dir, name)
-            _write_txt(out_path, all_msgs, meta)
+    # 表格/结构化：默认按时间平铺合并；txt/html/md 可按 merge 合并
+    merge_fmts = ('xlsx', 'csv', 'json', 'pgsql')
+    text_fmts = ('txt', 'html', 'md')
+    if fmt in merge_fmts or (merge and len(chat_infos) >= 1 and fmt in text_fmts):
+        ext = _fmt_ext(fmt)
+        name = f"messages_{stamp}{kw_tag}.{ext}"
+        out_path = os.path.join(out_dir, name)
+        _write_by_fmt(fmt, out_path, all_msgs, meta)
         progress_fn(100, "完成")
         return len(all_msgs), out_path, details
 
@@ -488,8 +501,9 @@ def export_all_contacts(decrypted_dir, out_dir, start_ts=None, end_ts=None,
                 continue
         selected.append(c)
 
-    # 表格类合并；txt/html 按会话分文件（多文件时打 zip）
-    merge = fmt in ('xlsx', 'csv')
+    # 表格/结构化合并；txt/html/md 按会话分文件（多文件时打 zip）
+    fmt = _normalize_fmt(fmt)
+    merge = fmt in ('xlsx', 'csv', 'json', 'pgsql')
     _total, path, details = export_chats(
         selected, out_dir, start_ts=start_ts, end_ts=end_ts, keyword=keyword,
         print_fn=print_fn, progress_fn=progress_fn, fmt=fmt,
@@ -534,6 +548,137 @@ def _write_txt(out_path, messages, meta):
             type_tag = f"[{m['type_name']}] "
         prefix = f"[{m['chat_name']}] " if multi else ""
         lines.append(f"[{m['timestamp']}] {prefix}{type_tag}{m['sender']}: {m['text']}")
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+
+
+def _write_markdown(out_path, messages, meta):
+    """Markdown 对话导出（便于博客/仓库阅读）。"""
+    lines = [
+        f"# {meta.get('display') or '聊天记录'}",
+        "",
+        f"- 会话标识: `{meta.get('uname') or ''}`",
+        f"- 导出时间: {meta.get('exported_at') or ''}",
+        f"- 消息数: {len(messages)}",
+    ]
+    if meta.get("keyword"):
+        lines.append(f"- 关键词: {meta['keyword']}")
+    lines.extend(["", "---", ""])
+    multi = (meta.get("chat_count") or 0) > 1
+    prev_date = None
+    for m in messages:
+        day = (m.get("date") or (m.get("timestamp") or "")[:10]) or ""
+        if day and day != prev_date:
+            lines.append(f"## {day}")
+            lines.append("")
+            prev_date = day
+        type_tag = ""
+        if m.get("type") != 1:
+            type_tag = f"**[{m.get('type_name') or ''}]** "
+        chat_prefix = f"[{m.get('chat_name')}] " if multi else ""
+        text = (m.get("text") or "").replace("\r\n", "\n").replace("\r", "\n")
+        # 缩进多行正文，避免打断列表
+        if "\n" in text:
+            body = "\n".join(("  " + ln) if ln else "" for ln in text.split("\n"))
+            lines.append(f"- **{chat_prefix}{m.get('sender') or ''}** · `{m.get('timestamp') or ''}`  ")
+            lines.append(f"  {type_tag}")
+            lines.append(body)
+        else:
+            lines.append(
+                f"- **{chat_prefix}{m.get('sender') or ''}** · `{m.get('timestamp') or ''}`: "
+                f"{type_tag}{text}"
+            )
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines) + '\n')
+
+
+def _write_json(out_path, messages, meta):
+    """纯 JSON 消息数组（非 ChatLab 专属格式）。"""
+    import json
+    payload = {
+        "meta": {
+            "display": meta.get("display"),
+            "username": meta.get("uname"),
+            "chatCount": meta.get("chat_count") or 1,
+            "exportedAt": meta.get("exported_at"),
+            "keyword": meta.get("keyword") or "",
+            "messageCount": len(messages),
+        },
+        "messages": [
+            {
+                "createTime": m.get("create_time"),
+                "timestamp": m.get("timestamp"),
+                "date": m.get("date"),
+                "sender": m.get("sender"),
+                "isMe": bool(m.get("is_me")),
+                "isSystem": bool(m.get("is_system")),
+                "type": m.get("type"),
+                "typeName": m.get("type_name"),
+                "text": m.get("text"),
+                "chatName": m.get("chat_name"),
+                "chatId": m.get("chat_id"),
+                "isGroup": bool(m.get("is_group")),
+                "localId": m.get("local_id"),
+            }
+            for m in messages
+        ],
+    }
+    with open(out_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _sql_escape(s):
+    if s is None:
+        return 'NULL'
+    return "'" + str(s).replace("'", "''") + "'"
+
+
+def _write_pgsql(out_path, messages, meta):
+    """PostgreSQL 兼容的 DDL + INSERT（可用 psql 导入）。"""
+    lines = [
+        "-- WeChat Export → PostgreSQL",
+        f"-- display: {meta.get('display') or ''}",
+        f"-- exported_at: {meta.get('exported_at') or ''}",
+        f"-- message_count: {len(messages)}",
+        "",
+        "CREATE TABLE IF NOT EXISTS wechat_messages (",
+        "  id BIGSERIAL PRIMARY KEY,",
+        "  create_time BIGINT,",
+        "  timestamp TEXT,",
+        "  chat_id TEXT,",
+        "  chat_name TEXT,",
+        "  sender TEXT,",
+        "  is_me BOOLEAN,",
+        "  is_system BOOLEAN,",
+        "  msg_type INTEGER,",
+        "  type_name TEXT,",
+        "  body TEXT,",
+        "  is_group BOOLEAN,",
+        "  local_id BIGINT",
+        ");",
+        "",
+        "BEGIN;",
+    ]
+    for m in messages:
+        lines.append(
+            "INSERT INTO wechat_messages "
+            "(create_time, timestamp, chat_id, chat_name, sender, is_me, is_system, "
+            "msg_type, type_name, body, is_group, local_id) VALUES ("
+            f"{int(m.get('create_time') or 0)}, "
+            f"{_sql_escape(m.get('timestamp'))}, "
+            f"{_sql_escape(m.get('chat_id'))}, "
+            f"{_sql_escape(m.get('chat_name'))}, "
+            f"{_sql_escape(m.get('sender'))}, "
+            f"{'TRUE' if m.get('is_me') else 'FALSE'}, "
+            f"{'TRUE' if m.get('is_system') else 'FALSE'}, "
+            f"{int(m.get('type') or 0)}, "
+            f"{_sql_escape(m.get('type_name'))}, "
+            f"{_sql_escape(m.get('text'))}, "
+            f"{'TRUE' if m.get('is_group') else 'FALSE'}, "
+            f"{int(m.get('local_id') or 0)}"
+            ");"
+        )
+    lines.extend(["COMMIT;", ""])
     with open(out_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
 

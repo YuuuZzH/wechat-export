@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # an older partial cache.
 _IMPLEMENTED_UPTO_ID = 7
 # Bump this when we change card payloads/ordering while keeping the same implemented_upto.
-_CACHE_VERSION = 26
+_CACHE_VERSION = 27
 
 
 # "Manifest" is used by the frontend to render the deck quickly, then lazily fetch each card.
@@ -705,7 +705,7 @@ def build_session_wrapped_response(
         scope=scope,
         year=year,
         implemented_upto=_IMPLEMENTED_UPTO_ID,
-        options_tag=f'v{_CACHE_VERSION}_session',
+        options_tag=f'v{_CACHE_VERSION}_session_duo',
     )
     if (not refresh) and cache_path.exists():
         try:
@@ -724,12 +724,36 @@ def build_session_wrapped_response(
     messages = collect_messages(
         chat_info, start_ts=start_ts, end_ts=end_ts, keyword=None)
 
+    is_group = bool(uname.endswith('@chatroom') or chat_info.get('is_group'))
+    gap_cap = 24 * 3600  # 超过 24h 不算「回复」
+
     hourly = Counter()
     dow = Counter()
     type_counter = Counter()
+    me_type_counter: Counter = Counter()
+    peer_type_counter: Counter = Counter()
+    member_counter: Counter = Counter()
+    member_media: Counter = Counter()
     active_days = set()
     texts = []
+    me_count = 0
+    peer_count = 0
+    me_chars = 0
+    peer_chars = 0
+    media = 0
+    stickers = 0
+    voice = 0
+    matrix = [[0] * 24 for _ in range(7)]
+
+    # Bidirectional reply gaps (private chats)
+    me_reply_gaps: list[int] = []
+    peer_reply_gaps: list[int] = []
+    prev_is_me: bool | None = None
+    prev_ts = 0
+
     for m in messages:
+        if m.get('is_system'):
+            continue
         ts = int(m.get('create_time') or 0)
         if not ts:
             continue
@@ -740,28 +764,66 @@ def build_session_wrapped_response(
         hourly[dt.hour] += 1
         dow[dt.weekday()] += 1
         active_days.add(dt.date().isoformat())
-        type_counter[m.get('type_name') or m.get('type') or '其他'] += 1
+        matrix[dt.weekday()][dt.hour] += 1
+
+        tname = str(m.get('type_name') or m.get('type') or '其他')
+        type_counter[tname] += 1
+        is_media = tname in ('图片', '视频') or tname in ('3', '43')
+        is_sticker = ('表情' in tname) or tname in ('47',)
+        is_voice = tname in ('语音', '34') or tname == '语音'
+        if is_media:
+            media += 1
+        if is_sticker:
+            stickers += 1
+        if is_voice or tname == '语音':
+            voice += 1
+
+        is_me = bool(m.get('is_me'))
         content = m.get('text') or ''
-        # 跳过富媒体占位，只拿正文做词云
+        char_n = len(content) if isinstance(content, str) and not content.startswith('[') else 0
+        if is_me:
+            me_count += 1
+            me_chars += char_n
+            me_type_counter[tname] += 1
+            member_label = '我'
+        else:
+            peer_count += 1
+            peer_chars += char_n
+            peer_type_counter[tname] += 1
+            member_label = (m.get('sender') or '未知').strip() or '未知'
+
+        if is_group:
+            member_counter[member_label] += 1
+            if is_media or is_sticker:
+                member_media[member_label] += 1
+
         if isinstance(content, str) and content.strip() and not content.startswith('['):
             texts.append(content.strip())
 
-    total = len(messages)
+        if not is_group and prev_is_me is not None and is_me != prev_is_me:
+            gap = int(ts) - int(prev_ts)
+            if 0 < gap < gap_cap:
+                if is_me:
+                    me_reply_gaps.append(gap)
+                else:
+                    peer_reply_gaps.append(gap)
+        prev_is_me = is_me
+        prev_ts = ts
+
+    total = me_count + peer_count
     peak_hour = hourly.most_common(1)[0][0] if hourly else None
     peak_dow = dow.most_common(1)[0][0] if dow else None
     peak_dow_name = DOW_NAMES[peak_dow] if peak_dow is not None and 0 <= peak_dow < len(DOW_NAMES) else None
 
-    # Heatmap matrix Mon..Sun x 24h（与 hourly/dow 一次扫完）
-    matrix = [[0] * 24 for _ in range(7)]
-    for m in messages:
-        ts = int(m.get('create_time') or 0)
-        if not ts:
-            continue
-        try:
-            dt = _dt.fromtimestamp(ts, tz=TZ)
-        except (OSError, ValueError):
-            continue
-        matrix[dt.weekday()][dt.hour] += 1
+    def _avg(xs: list[int]) -> float | None:
+        return (sum(xs) / len(xs)) if xs else None
+
+    def _median(xs: list[int]) -> float | None:
+        if not xs:
+            return None
+        s = sorted(xs)
+        mid = len(s) // 2
+        return float(s[mid]) if len(s) % 2 else (s[mid - 1] + s[mid]) / 2.0
 
     # Keywords
     keywords = []
@@ -787,22 +849,22 @@ def build_session_wrapped_response(
     except Exception:
         logger.exception('session wrapped keywords failed')
 
-    # type 字段是微信 local_type 数字；优先用 type_name 中文
-    media = 0
-    stickers = 0
-    for name, cnt in type_counter.items():
-        n = str(name)
-        if n in ('图片', '视频') or n in ('3', '43'):
-            media += cnt
-        if '表情' in n or n in ('47',):
-            stickers += cnt
+    def _top_types(counter: Counter, limit: int = 8) -> list[dict[str, Any]]:
+        return [{'name': n, 'count': int(c)} for n, c in counter.most_common(limit)]
 
-    cards = [
+    if is_group:
+        overview_title = '%s · %d 群聊画像' % (display, year)
+        overview_narrative = '本报告统计「%s」在 %d 年的成员发言、活跃时段与媒体内容。' % (display, year)
+    else:
+        overview_title = '与 %s 的 %d 双人报告' % (display, year)
+        overview_narrative = '只看你和「%s」这一年的互动：谁说得多、谁回得快、聊什么。' % display
+
+    cards: list[dict[str, Any]] = [
         {
             'id': 0,
             'kind': 'global/overview',
-            'title': '%s · %d 会话概览' % (display, year),
-            'narrative': '本报告仅统计与「%s」在 %d 年的对话。' % (display, year),
+            'title': overview_title,
+            'narrative': overview_narrative,
             'data': {
                 'totalMessages': total,
                 'activeDays': len(active_days),
@@ -814,32 +876,132 @@ def build_session_wrapped_response(
                 'addedFriends': 0,
                 'chatName': display,
                 'chatUsername': uname,
-            },
-        },
-        {
-            'id': 1,
-            'kind': 'time/weekday_hour_heatmap',
-            'title': '活跃时段',
-            'narrative': '你们最常在什么时候聊天？',
-            'data': {
-                'weekdayLabels': list(DOW_NAMES),
-                'hourLabels': ['%02d' % h for h in range(24)],
-                'matrix': matrix,
-                'totalMessages': total,
-            },
-        },
-        {
-            'id': 5,
-            'kind': 'text/keywords_wordcloud',
-            'title': '会话关键词',
-            'narrative': '从这一年的正文里抽出的高频词。',
-            'data': {
-                'keywords': keywords,
-                'topKeyword': top_keyword,
-                'examples': [],
+                'isDuo': not is_group,
+                'meMessages': me_count,
+                'peerMessages': peer_count,
             },
         },
     ]
+
+    if not is_group:
+        me_share = (me_count / total) if total else 0.0
+        cards.append({
+            'id': 10,
+            'kind': 'duo/balance',
+            'title': '谁说得多？',
+            'narrative': '双方消息条数与字数对比（系统消息已排除）。',
+            'data': {
+                'peerName': display,
+                'meMessages': me_count,
+                'peerMessages': peer_count,
+                'meChars': me_chars,
+                'peerChars': peer_chars,
+                'meShare': round(me_share, 4),
+                'peerShare': round(1.0 - me_share, 4) if total else 0.0,
+                'totalMessages': total,
+            },
+        })
+        cards.append({
+            'id': 11,
+            'kind': 'duo/reply_speed',
+            'title': '谁回得更快？',
+            'narrative': '对方发言后你回复、以及你发言后对方回复的间隔（间隔超过 24 小时不计）。',
+            'data': {
+                'peerName': display,
+                'gapCapSeconds': gap_cap,
+                'me': {
+                    'replies': len(me_reply_gaps),
+                    'avgSeconds': _avg(me_reply_gaps),
+                    'medianSeconds': _median(me_reply_gaps),
+                    'minSeconds': min(me_reply_gaps) if me_reply_gaps else None,
+                    'maxSeconds': max(me_reply_gaps) if me_reply_gaps else None,
+                },
+                'peer': {
+                    'replies': len(peer_reply_gaps),
+                    'avgSeconds': _avg(peer_reply_gaps),
+                    'medianSeconds': _median(peer_reply_gaps),
+                    'minSeconds': min(peer_reply_gaps) if peer_reply_gaps else None,
+                    'maxSeconds': max(peer_reply_gaps) if peer_reply_gaps else None,
+                },
+            },
+        })
+        cards.append({
+            'id': 12,
+            'kind': 'duo/types',
+            'title': '聊什么？',
+            'narrative': '消息类型占比：你发的 vs 对方发的。',
+            'data': {
+                'peerName': display,
+                'meTypes': _top_types(me_type_counter),
+                'peerTypes': _top_types(peer_type_counter),
+                'allTypes': _top_types(type_counter),
+            },
+        })
+    else:
+        members_ranked = [
+            {
+                'name': name,
+                'count': int(cnt),
+                'share': round(cnt / total, 4) if total else 0.0,
+                'mediaCount': int(member_media.get(name, 0)),
+            }
+            for name, cnt in member_counter.most_common(40)
+        ]
+        cards.append({
+            'id': 20,
+            'kind': 'group/members',
+            'title': '发言排行',
+            'narrative': '按消息条数统计群成员活跃度（系统消息已排除）。',
+            'data': {
+                'groupName': display,
+                'members': members_ranked,
+                'uniqueSpeakers': len(member_counter),
+                'totalMessages': total,
+            },
+        })
+        cards.append({
+            'id': 21,
+            'kind': 'group/media',
+            'title': '媒体与内容',
+            'narrative': '图片/视频、表情、语音等占比，以及发媒体最多的成员。',
+            'data': {
+                'groupName': display,
+                'totalMessages': total,
+                'mediaCount': media,
+                'stickerCount': stickers,
+                'voiceCount': voice,
+                'mediaShare': round(media / total, 4) if total else 0.0,
+                'types': _top_types(type_counter),
+                'topMediaMembers': [
+                    {'name': n, 'count': int(c)}
+                    for n, c in member_media.most_common(10)
+                ],
+            },
+        })
+
+    cards.append({
+        'id': 1,
+        'kind': 'time/weekday_hour_heatmap',
+        'title': '活跃时段',
+        'narrative': '这个群最常在什么时候热闹？' if is_group else '你们最常在什么时候聊天？',
+        'data': {
+            'weekdayLabels': list(DOW_NAMES),
+            'hourLabels': ['%02d' % h for h in range(24)],
+            'matrix': matrix,
+            'totalMessages': total,
+        },
+    })
+    cards.append({
+        'id': 5,
+        'kind': 'text/keywords_wordcloud',
+        'title': '会话关键词',
+        'narrative': '从这一年的正文里抽出的高频词。',
+        'data': {
+            'keywords': keywords,
+            'topKeyword': top_keyword,
+            'examples': [],
+        },
+    })
 
     obj: dict[str, Any] = {
         'account': account_dir.name,
@@ -849,6 +1011,8 @@ def build_session_wrapped_response(
         'scope': scope,
         'chat': uname,
         'chatDisplayName': display,
+        'isDuo': not is_group,
+        'isGroup': is_group,
         'username': get_account_wxid(account_dir),
         'generated_at': int(time.time()),
         'cached': False,
