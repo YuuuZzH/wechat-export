@@ -223,13 +223,54 @@ def run_backup(
     v2_count = _stop_harvester(harvester_stop, harvester_thread, harvester_result)
     if v2_count > 0:
         result['stats']['v2_keys_harvested'] = v2_count
-        on_progress('done', f'Backup complete — {v2_count} V2 keys harvested', 1.0)
 
     if account:
         result['wxid'] = account.wxid
     result['success'] = len(result['errors']) == 0
-    if not harvester_thread:
-        on_progress('done', 'Backup complete', 1.0)
+
+    # Register version snapshot (meta + chats) for compare / rollback
+    done_detail = 'Backup complete'
+    if v2_count > 0:
+        done_detail = f'Backup complete — {v2_count} V2 keys harvested'
+    if result['success'] and os.path.isdir(os.path.join(output_dir, 'message')):
+        try:
+            from .versions import register_version, find_previous_version, diff_versions
+            on_progress('index', '登记备份版本快照…', 0.98)
+            meta = register_version(
+                output_dir,
+                wxid=result.get('wxid') or getattr(account, 'wxid', '') or '',
+                stats={
+                    'decrypted': result['stats'].get('decrypted'),
+                    'db_reused': result['stats'].get('db_reused'),
+                    'db_fresh': result['stats'].get('db_fresh'),
+                    'migrated': result['stats'].get('migrated'),
+                    'link_dest': result['stats'].get('link_dest'),
+                },
+                parent_path=resolved_link,
+            )
+            result['stats']['version'] = meta
+            prev = find_previous_version(output_dir)
+            if prev and os.path.abspath(prev) != os.path.abspath(output_dir):
+                diff = diff_versions(prev, output_dir)
+                if diff.get('ok'):
+                    result['stats']['diff_vs_previous'] = {
+                        'previous_path': prev,
+                        'previous_id': (diff.get('old') or {}).get('id'),
+                        'summary': diff.get('summary'),
+                        'added': (diff.get('added') or [])[:20],
+                        'grown': (diff.get('grown') or [])[:10],
+                    }
+                    s = diff.get('summary') or {}
+                    done_detail = (
+                        '版本已登记：新增会话 %s，消息净增 %s'
+                        % (s.get('added_chats', 0), s.get('message_delta', 0))
+                    )
+            else:
+                done_detail = '版本已登记：%s' % (meta.get('id') or '')
+        except Exception as e:
+            result['stats']['version_error'] = str(e)
+
+    on_progress('done', done_detail, 1.0)
     return result
 
 

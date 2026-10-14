@@ -310,6 +310,10 @@ def create_app(decrypted_dir: str, wxid: str = None, db_dir: str = None) -> Flas
     def backup_page():
         return render_template('backup.html')
 
+    @app.route('/versions')
+    def versions_page():
+        return render_template('versions.html')
+
     @app.route('/keyscan')
     def keyscan_page():
         return render_template('keyscan.html')

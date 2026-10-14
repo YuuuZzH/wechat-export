@@ -88,9 +88,12 @@ Host: 127.0.0.1:5000
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/backup/scan` | 扫描微信数据目录 |
-| POST | `/api/backup/run` | 一键备份流水线（SSE） |
+| POST | `/api/backup/run` | 一键备份流水线（SSE）；成功后登记版本并可选返回相对上次的差分摘要 |
 | POST | `/api/backup/decrypt` | 解密 |
 | POST | `/api/backup/keyscan` | 密钥扫描 |
+| GET | `/api/backup/versions` | 列出备份版本（`base_dir` / `wxid` / `limit` 可选） |
+| GET/POST | `/api/backup/versions/diff` | 对比两版：`old` + `new` 路径 → 新增/消失会话与消息增量 |
+| POST | `/api/backup/versions/activate` | 将工作集切换到指定备份（回滚），body: `{ "path": "..." }` |
 | GET/POST | `/api/keys/*` | 密钥目录 / 校验 / 保存 |
 
 ---

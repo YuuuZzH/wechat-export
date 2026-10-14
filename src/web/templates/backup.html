@@ -3,7 +3,7 @@
 {% block content %}
 <a href="/" class="back-link">← 返回仪表盘</a>
 <h2 style="margin:0 0 4px 0">📦 一键备份</h2>
-<p style="color:var(--px-muted);font-size:12px;margin:0 0 20px 0">扫描 → 解密 → 迁移媒体 → 构建索引 · 默认增量：未变更的库与媒体直接复用上次备份</p>
+<p style="color:var(--px-muted);font-size:12px;margin:0 0 20px 0">扫描 → 解密 → 迁移媒体 → 构建索引 · 默认增量：未变更的库与媒体直接复用上次备份 · 每次写入时间戳目录（可<a href="/versions" style="color:inherit">对比 / 回滚</a>）</p>
 
 <div class="steps-bar" id="steps-bar">
   <span class="step-item active" data-stage="scan"><span>①</span> 扫描账号</span>
@@ -18,7 +18,7 @@
 <div class="config-panel">
   <div class="form-row">
     <div style="flex:2"><label>微信数据目录 (db_storage)</label><input id="cfg-db-dir" placeholder="例如: D:\xwechat_files\wxid_xxx\db_storage"></div>
-    <div style="flex:2"><label>备份输出目录</label><input id="cfg-output" placeholder="例如: D:\WeChat_Backup\2026-05-18"></div>
+    <div style="flex:2"><label>备份输出目录</label><input id="cfg-output" placeholder="留空则自动：backup\YYYY-MM-DD_HHMMSS"></div>
     <div><label>&nbsp;</label><button id="btn-run" class="btn btn-primary">开始备份</button></div>
   </div>
   <div class="form-row" style="margin-top:8px">
@@ -119,12 +119,38 @@ page.showResult = function(result) {
       + ' | 跳过 ' + (stats.migrated.skipped || 0) + '</dd>';
   }
   if (stats.indexed) html += '<dt>搜索索引</dt><dd>' + stats.indexed + '</dd>';
+  if (stats.version && stats.version.id) {
+    html += '<dt>备份版本</dt><dd>' + stats.version.id
+      + '（会话 ' + (stats.version.chat_count || 0)
+      + ' · 消息 ' + (stats.version.message_total || 0) + '）</dd>';
+  }
+  const diff = stats.diff_vs_previous;
+  if (diff && diff.summary) {
+    const s = diff.summary;
+    html += '<dt>相对上次</dt><dd>新增会话 ' + (s.added_chats || 0)
+      + ' · 消息净增 ' + (s.message_delta || 0);
+    if (diff.previous_id) html += ' · 基线 ' + diff.previous_id;
+    html += '</dd>';
+    const added = diff.added || [];
+    if (added.length) {
+      html += '<dt>这次多了哪些会话</dt><dd><ul style="margin:4px 0 0;padding-left:18px">';
+      for (const c of added.slice(0, 12)) {
+        html += '<li>' + (c.display_name || c.chat_id)
+          + ' <span style="color:var(--px-muted)">(' + (c.message_count || 0) + ' 条)</span></li>';
+      }
+      if (added.length > 12) html += '<li>…共 ' + added.length + ' 个，详见版本页</li>';
+      html += '</ul></dd>';
+    }
+  }
   if (hasErrors) {
     html += '<dt style="color:#ff5a6e">错误</dt><dd style="color:#ff5a6e">' + stats.errors.join('<br>') + '</dd>';
   }
   html += '</dl>';
   if (!hasErrors) {
-    html += '<p style="margin-top:12px"><a href="/chat" class="btn btn-primary" style="display:inline-block;text-decoration:none">打开聊天查看器</a></p>';
+    html += '<p style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">';
+    html += '<a href="/chat" class="btn btn-primary" style="display:inline-block;text-decoration:none">打开聊天查看器</a>';
+    html += '<a href="/versions" class="btn btn-secondary" style="display:inline-block;text-decoration:none">备份版本 / 对比回滚</a>';
+    html += '</p>';
   }
   document.getElementById('result-content').innerHTML = html;
 };

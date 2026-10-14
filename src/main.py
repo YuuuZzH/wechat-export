@@ -112,10 +112,13 @@ def cmd_backup(args):
     print(f"数据目录: {db_path}")
 
     import datetime
+    from backup.versions import default_version_output_dir
     if getattr(sys, 'frozen', False):
-        default_out = os.path.join(BASE, 'backup', datetime.datetime.now().strftime('%Y-%m-%d'))
+        backup_root = os.path.join(BASE, 'backup')
     else:
-        default_out = os.path.join(BASE, '..', 'backup', datetime.datetime.now().strftime('%Y-%m-%d'))
+        backup_root = os.path.join(BASE, '..', 'backup')
+    # Timestamped folder per run so versions can be compared / rolled back
+    default_out = default_version_output_dir(backup_root)
     output_dir = args.output or default_out
     print(f"输出目录: {output_dir}")
 

@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}备份版本 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">备份版本</h2>
+<p style="color:var(--px-muted);font-size:12px;margin:0 0 20px 0">
+  多次备份对比 · 回滚工作集 · 差分摘要（这次多了哪些会话）。每次备份写入独立时间戳目录，不覆盖历史。
+</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:3">
+      <label>备份根目录（可选，留空自动发现）</label>
+      <input id="cfg-base" placeholder="例如: D:\WeChat_Backup 或项目下 backup\">
+    </div>
+    <div style="flex:1">
+      <label>&nbsp;</label>
+      <button id="btn-refresh" class="btn btn-primary" style="width:100%">刷新列表</button>
+    </div>
+  </div>
+  <div id="current-banner" style="margin-top:12px;font-size:12px;color:var(--px-muted);line-height:1.6"></div>
+</div>
+
+<div class="config-panel" style="margin-top:16px">
+  <h3 style="margin:0 0 12px 0;font-size:15px">版本列表</h3>
+  <div id="version-list" style="font-size:13px;color:var(--px-muted)">加载中…</div>
+</div>
+
+<div class="config-panel" style="margin-top:16px">
+  <h3 style="margin:0 0 12px 0;font-size:15px">对比差分</h3>
+  <div class="form-row">
+    <div style="flex:2">
+      <label>旧版本</label>
+      <select id="diff-old"></select>
+    </div>
+    <div style="flex:2">
+      <label>新版本</label>
+      <select id="diff-new"></select>
+    </div>
+    <div style="flex:1">
+      <label>&nbsp;</label>
+      <button id="btn-diff" class="btn btn-secondary" style="width:100%">对比</button>
+    </div>
+  </div>
+  <div id="diff-result" style="margin-top:14px;display:none"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const listEl = document.getElementById('version-list');
+  const bannerEl = document.getElementById('current-banner');
+  const oldSel = document.getElementById('diff-old');
+  const newSel = document.getElementById('diff-new');
+  const diffBox = document.getElementById('diff-result');
+  let versions = [];
+
+  function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  }
+
+  function fmtTime(ts) {
+    if (!ts) return '—';
+    try { return new Date(Number(ts) * 1000).toLocaleString('zh-CN'); }
+    catch (e) { return String(ts); }
+  }
+
+  function fillSelects(items) {
+    const opts = items.map(v =>
+      '<option value="' + esc(v.path) + '">' + esc(v.id || v.path)
+      + (v.active ? '（当前）' : '') + '</option>'
+    ).join('');
+    oldSel.innerHTML = opts;
+    newSel.innerHTML = opts;
+    if (items.length >= 2) {
+      oldSel.selectedIndex = 1;
+      newSel.selectedIndex = 0;
+    } else if (items.length === 1) {
+      oldSel.selectedIndex = 0;
+      newSel.selectedIndex = 0;
+    }
+  }
+
+  function renderList(items) {
+    if (!items.length) {
+      listEl.innerHTML = '<p style="margin:0">未发现备份版本。请先在「<a href="/backup">一键备份</a>」完成一次备份。</p>';
+      return;
+    }
+    let html = '<div class="select-list">';
+    for (const v of items) {
+      const active = v.active ? ' border-color:var(--px-gold)' : '';
+      html += '<div class="select-item" style="cursor:default' + active + '">';
+      html += '<div class="select-name">' + esc(v.id || '未知');
+      if (v.active) html += ' <span style="color:var(--px-gold);font-size:11px">当前工作集</span>';
+      if (v.legacy) html += ' <span style="color:var(--px-muted);font-size:11px">历史备份</span>';
+      html += '</div>';
+      html += '<div class="select-meta">';
+      html += esc(fmtTime(v.created_at));
+      html += ' · 会话 ' + esc(v.chat_count || 0);
+      html += ' · 消息 ' + esc(v.message_total || 0);
+      if (v.wxid) html += ' · ' + esc(v.wxid);
+      html += '</div>';
+      html += '<div style="margin-top:6px;font-size:11px;color:var(--px-muted);word-break:break-all">' + esc(v.path) + '</div>';
+      html += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">';
+      if (!v.active) {
+        html += '<button type="button" class="btn btn-primary btn-activate" data-path="' + esc(v.path) + '" style="font-size:11px">设为工作集（回滚）</button>';
+      }
+      html += '<button type="button" class="btn btn-secondary btn-as-old" data-path="' + esc(v.path) + '" style="font-size:11px">作为对比旧版</button>';
+      html += '<button type="button" class="btn btn-secondary btn-as-new" data-path="' + esc(v.path) + '" style="font-size:11px">作为对比新版</button>';
+      html += '</div></div>';
+    }
+    html += '</div>';
+    listEl.innerHTML = html;
+
+    listEl.querySelectorAll('.btn-activate').forEach(btn => {
+      btn.addEventListener('click', () => activate(btn.dataset.path));
+    });
+    listEl.querySelectorAll('.btn-as-old').forEach(btn => {
+      btn.addEventListener('click', () => { oldSel.value = btn.dataset.path; });
+    });
+    listEl.querySelectorAll('.btn-as-new').forEach(btn => {
+      btn.addEventListener('click', () => { newSel.value = btn.dataset.path; });
+    });
+  }
+
+  async function load() {
+    listEl.textContent = '加载中…';
+    const base = document.getElementById('cfg-base').value.trim();
+    const q = new URLSearchParams({ limit: '80' });
+    if (base) q.set('base_dir', base);
+    try {
+      const res = await fetch('/api/backup/versions?' + q.toString());
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '加载失败');
+      versions = data.versions || [];
+      if (data.current) {
+        bannerEl.innerHTML = '当前工作集：<code style="word-break:break-all">' + esc(data.current) + '</code>';
+      } else {
+        bannerEl.textContent = '尚未设置工作集（完成备份后会自动指向最新版本）。';
+      }
+      renderList(versions);
+      fillSelects(versions);
+    } catch (e) {
+      listEl.innerHTML = '<p style="color:#ff5a6e;margin:0">' + esc(e.message || e) + '</p>';
+    }
+  }
+
+  async function activate(path) {
+    if (!confirm('将工作集切换到此备份？\n聊天查看器 / 分析 / 导出将使用该版本数据。\n\n' + path)) return;
+    try {
+      const res = await fetch('/api/backup/versions/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '切换失败');
+      await load();
+      alert('已切换到：' + (data.id || data.path));
+    } catch (e) {
+      alert('切换失败: ' + (e.message || e));
+    }
+  }
+
+  function renderDiff(d) {
+    const s = d.summary || {};
+    let html = '<dl class="result-stats">';
+    html += '<dt>摘要</dt><dd>新增会话 <b>' + esc(s.added_chats) + '</b> · 消失 '
+      + esc(s.removed_chats) + ' · 消息增长会话 ' + esc(s.grown_chats)
+      + ' · 消息净增 <b>' + esc(s.message_delta) + '</b></dd>';
+    html += '<dt>对比</dt><dd>' + esc((d.old || {}).id) + ' → ' + esc((d.new || {}).id) + '</dd>';
+    html += '</dl>';
+
+    const added = d.added || [];
+    if (added.length) {
+      html += '<h4 style="margin:16px 0 8px;font-size:13px">这次多了哪些会话（' + added.length + '）</h4>';
+      html += '<ul style="margin:0;padding-left:18px;font-size:12px;line-height:1.7">';
+      for (const c of added.slice(0, 40)) {
+        html += '<li>' + esc(c.display_name || c.chat_id)
+          + ' <span style="color:var(--px-muted)">(' + esc(c.message_count) + ' 条'
+          + (c.is_group ? ' · 群' : '') + ')</span></li>';
+      }
+      if (added.length > 40) html += '<li>…还有 ' + (added.length - 40) + ' 个</li>';
+      html += '</ul>';
+    } else {
+      html += '<p style="margin:12px 0 0;font-size:12px;color:var(--px-muted)">相对旧版没有新增会话。</p>';
+    }
+
+    const grown = d.grown || [];
+    if (grown.length) {
+      html += '<h4 style="margin:16px 0 8px;font-size:13px">消息明显增多（前 ' + Math.min(20, grown.length) + '）</h4>';
+      html += '<ul style="margin:0;padding-left:18px;font-size:12px;line-height:1.7">';
+      for (const c of grown.slice(0, 20)) {
+        html += '<li>' + esc(c.display_name || c.chat_id)
+          + ' <span style="color:var(--px-muted)">' + esc(c.old_count) + ' → ' + esc(c.new_count)
+          + '（+' + esc(c.delta) + '）</span></li>';
+      }
+      html += '</ul>';
+    }
+
+    const removed = d.removed || [];
+    if (removed.length) {
+      html += '<h4 style="margin:16px 0 8px;font-size:13px">旧版有、新版无（' + removed.length + '）</h4>';
+      html += '<ul style="margin:0;padding-left:18px;font-size:12px;line-height:1.7">';
+      for (const c of removed.slice(0, 20)) {
+        html += '<li>' + esc(c.display_name || c.chat_id) + '</li>';
+      }
+      if (removed.length > 20) html += '<li>…还有 ' + (removed.length - 20) + ' 个</li>';
+      html += '</ul>';
+    }
+
+    diffBox.style.display = 'block';
+    diffBox.innerHTML = html;
+  }
+
+  async function runDiff() {
+    const oldP = oldSel.value;
+    const newP = newSel.value;
+    if (!oldP || !newP) { alert('请先选择两个版本'); return; }
+    if (oldP === newP) { alert('请选择两个不同的版本'); return; }
+    diffBox.style.display = 'block';
+    diffBox.textContent = '对比中…';
+    try {
+      const res = await fetch('/api/backup/versions/diff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old: oldP, new: newP }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '对比失败');
+      renderDiff(data);
+    } catch (e) {
+      diffBox.innerHTML = '<p style="color:#ff5a6e;margin:0">' + esc(e.message || e) + '</p>';
+    }
+  }
+
+  document.getElementById('btn-refresh').addEventListener('click', load);
+  document.getElementById('btn-diff').addEventListener('click', runDiff);
+  load();
+})();
+</script>
+{% endblock %}

@@ -4,7 +4,7 @@ import sys
 import ctypes
 import threading
 import time as _time
-from flask import Blueprint, request, current_app
+from flask import Blueprint, request, current_app, jsonify
 
 _BASE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _BASE not in sys.path:
@@ -44,8 +44,8 @@ def backup_run():
     if data.get('output_dir'):
         output_dir = _safe_path(data['output_dir'])
     else:
-        import datetime as _dt
-        output_dir = os.path.join(_DATA_ROOT, 'backup', _dt.datetime.now().strftime('%Y-%m-%d'))
+        from backup.versions import default_version_output_dir
+        output_dir = default_version_output_dir(os.path.join(_DATA_ROOT, 'backup'))
     key_file = _safe_path(data['key_file']) if data.get('key_file') else None
     start_date = data.get('start_date') or None
     end_date = data.get('end_date') or None
@@ -119,6 +119,76 @@ def backup_run():
 
     threading.Thread(target=_run, daemon=True).start()
     return sse_response(gen)
+
+
+@backup_bp.route('/versions', methods=['GET'])
+def backup_versions_list():
+    """GET /api/backup/versions — List backup versions (compare / rollback)."""
+    from backup.versions import list_versions, load_version_meta, is_backup_dir
+    from engine.config_file import get_backup_data_dir
+
+    base_dir = request.args.get('base_dir') or None
+    if base_dir:
+        base_dir = _safe_path(base_dir)
+    wxid = (request.args.get('wxid') or '').strip() or None
+    try:
+        limit = int(request.args.get('limit') or 50)
+    except (TypeError, ValueError):
+        limit = 50
+
+    versions = list_versions(base_dir, wxid=wxid, limit=limit)
+    current = get_backup_data_dir() or current_app.config.get('DECRYPTED_DIR') or ''
+    current_abs = os.path.abspath(current) if current else ''
+    for v in versions:
+        path = os.path.abspath(v.get('path') or '')
+        v['active'] = bool(current_abs and path == current_abs)
+    active_meta = None
+    if current_abs and is_backup_dir(current_abs):
+        active_meta = load_version_meta(current_abs)
+    return jsonify({
+        'ok': True,
+        'current': current_abs or None,
+        'current_meta': active_meta,
+        'versions': versions,
+        'count': len(versions),
+    })
+
+
+@backup_bp.route('/versions/diff', methods=['GET', 'POST'])
+def backup_versions_diff():
+    """GET|POST /api/backup/versions/diff — Diff two backup versions."""
+    from backup.versions import diff_versions
+
+    data = request.get_json(silent=True) or {}
+    old_dir = data.get('old') or request.args.get('old') or ''
+    new_dir = data.get('new') or request.args.get('new') or ''
+    if not old_dir or not new_dir:
+        return jsonify({'ok': False, 'error': '需要 old 与 new 两个备份路径'}), 400
+    old_dir = _safe_path(old_dir)
+    new_dir = _safe_path(new_dir)
+    result = diff_versions(old_dir, new_dir)
+    status = 200 if result.get('ok') else 400
+    return jsonify(result), status
+
+
+@backup_bp.route('/versions/activate', methods=['POST'])
+def backup_versions_activate():
+    """POST /api/backup/versions/activate — Switch working set to a backup (rollback)."""
+    from backup.versions import activate_version
+
+    data = request.get_json(silent=True) or {}
+    path = data.get('path') or data.get('backup_dir') or ''
+    if not path:
+        return jsonify({'ok': False, 'error': '缺少 path'}), 400
+    path = _safe_path(path)
+    wxid = (data.get('wxid') or '').strip()
+    result = activate_version(path, wxid=wxid)
+    if not result.get('ok'):
+        return jsonify(result), 400
+    # Keep live Flask app in sync (same as backup/run success path)
+    current_app.config['DECRYPTED_DIR'] = result['path']
+    result['decrypted_dir'] = result['path']
+    return jsonify(result)
 
 
 @backup_bp.route('/scan', methods=['POST'])
