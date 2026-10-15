@@ -239,6 +239,8 @@ def migrate_media(
     end_date: Optional[str] = None,
     link_dest: Optional[str] = None,
     on_progress: Callable[[str, int, int], None] = None,
+    md5_allowlist: Optional[set] = None,
+    refs: Optional[list] = None,
 ) -> dict:
     """Migrate all media files using hardlinks, falling back to copy.
 
@@ -251,6 +253,8 @@ def migrate_media(
             When set, each media file checks link_dest/media/<subdir>/<name>
             first. If found, os.link() reuses the old copy instead of
             accessing the WeChat source — saving both time and disk space.
+        md5_allowlist: If set, only migrate these md5s (one-click fill holes).
+        refs: Optional precomputed list of {md5, media_type}; skips DB scan.
     Returns:
         {total: N, hardlinked: N, copied: N, skipped: N, link_reused: N, errors: [str]}
     """
@@ -267,23 +271,31 @@ def migrate_media(
     stats = {'total': 0, 'hardlinked': 0, 'copied': 0, 'skipped': 0,
              'link_reused': 0, 'errors': []}
 
-    if not os.path.isdir(msg_dir):
+    if not os.path.isdir(msg_dir) and not refs:
         return stats
 
-    all_refs = []
-    for fname in os.listdir(msg_dir):
-        if fname.endswith('.db'):
-            all_refs.extend(_iter_media_refs(os.path.join(msg_dir, fname),
-                                              start_ts=start_ts, end_ts=end_ts))
+    if refs is not None:
+        all_refs = list(refs)
+    else:
+        all_refs = []
+        for fname in os.listdir(msg_dir):
+            if fname.endswith('.db'):
+                all_refs.extend(_iter_media_refs(os.path.join(msg_dir, fname),
+                                                  start_ts=start_ts, end_ts=end_ts))
 
     # Deduplicate by md5
     seen = set()
     unique_refs = []
+    allow = {m.lower() for m in md5_allowlist} if md5_allowlist else None
     for ref in all_refs:
-        md5 = ref.get('md5', '')
-        if md5 and md5 not in seen:
-            seen.add(md5)
-            unique_refs.append(ref)
+        md5 = (ref.get('md5') or '').lower()
+        if not md5 or md5 in seen:
+            continue
+        if allow is not None and md5 not in allow:
+            continue
+        seen.add(md5)
+        # keep canonical casing from ref
+        unique_refs.append(ref)
     all_refs = unique_refs
 
     stats['total'] = len(all_refs)
@@ -292,6 +304,39 @@ def migrate_media(
     for i, ref in enumerate(all_refs):
         src = _find_media_source(db_dir, ref, decrypted_dir=decrypted_data_dir)
         if not src:
+            # Try prior backup as sole source when live WeChat file is gone
+            if link_dest:
+                mtype = ref.get('media_type', 0)
+                subdir = _TYPE_CATEGORY.get(mtype, 'files')
+                md5 = ref.get('md5') or ''
+                link_dir = os.path.join(link_dest, 'media', subdir)
+                recovered = False
+                if os.path.isdir(link_dir) and md5:
+                    md5_l = md5.lower()
+                    try:
+                        for fname in os.listdir(link_dir):
+                            if fname.lower().startswith(md5_l):
+                                dst = os.path.join(media_out, subdir, fname)
+                                if os.path.exists(dst):
+                                    stats['skipped'] += 1
+                                else:
+                                    try:
+                                        os.link(os.path.join(link_dir, fname), dst)
+                                        stats['link_reused'] += 1
+                                    except OSError:
+                                        try:
+                                            shutil.copy2(os.path.join(link_dir, fname), dst)
+                                            stats['copied'] += 1
+                                        except OSError as e:
+                                            stats['errors'].append(f"{fname}: {e}")
+                                recovered = True
+                                break
+                    except OSError:
+                        pass
+                if recovered:
+                    if on_progress:
+                        on_progress(md5[:12], i + 1, len(all_refs))
+                    continue
             stats['skipped'] += 1
             continue
 

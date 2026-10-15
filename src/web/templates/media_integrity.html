@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}媒体完整性 — WeChat Export{% endblock %}
+{% block content %}
+<a href="/" class="back-link">← 返回仪表盘</a>
+<h2 style="margin:0 0 4px 0">媒体完整性体检</h2>
+<p style="color:var(--px-muted);font-size:12px;margin:0 0 20px 0">
+  扫描当前工作集备份中的图片 / 视频 / 语音是否落盘；列出缺失项，并可从微信源或上一版备份一键补迁。
+</p>
+
+<div class="config-panel">
+  <div class="form-row">
+    <div style="flex:2">
+      <label>备份目录（留空=当前工作集）</label>
+      <input id="cfg-output" placeholder="自动读取当前备份工作集">
+    </div>
+    <div style="flex:2">
+      <label>微信 db_storage（补迁源，可选）</label>
+      <input id="cfg-db-dir" placeholder="例如: D:\xwechat_files\wxid_xxx\db_storage">
+    </div>
+  </div>
+  <div class="form-row" style="margin-top:8px">
+    <div style="flex:1"><label>起始日期</label><input type="date" id="cfg-date-from"></div>
+    <div style="flex:1"><label>截止日期</label><input type="date" id="cfg-date-to"></div>
+    <div style="flex:2">
+      <label>类型</label>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;padding-top:6px;font-size:13px">
+        <label class="check-row" style="margin:0"><input type="checkbox" class="type-cb" value="3" checked> 图片</label>
+        <label class="check-row" style="margin:0"><input type="checkbox" class="type-cb" value="43" checked> 视频</label>
+        <label class="check-row" style="margin:0"><input type="checkbox" class="type-cb" value="34" checked> 语音</label>
+        <label class="check-row" style="margin:0"><input type="checkbox" class="type-cb" value="6"> 文件</label>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+    <button id="btn-scan" class="btn btn-primary">开始体检</button>
+    <button id="btn-remigrate" class="btn btn-secondary" disabled>一键补迁可恢复项</button>
+    <a href="/backup" class="btn btn-secondary" style="text-decoration:none;display:inline-flex;align-items:center">完整备份</a>
+  </div>
+  <div id="dir-hint" style="color:var(--px-muted);font-size:12px;margin-top:10px;line-height:1.6">
+    「可恢复」= 微信源目录或上一版备份里还能找到文件；「已丢失」= 源端也不在，需重新从手机/电脑同步后再备份。
+  </div>
+</div>
+
+<div id="summary-panel" class="config-panel" style="margin-top:16px;display:none">
+  <h3 style="margin:0 0 10px;font-size:15px">体检摘要</h3>
+  <dl class="result-stats" id="summary-stats"></dl>
+  <div id="progress-wrap" style="display:none;margin-top:12px">
+    <div class="progress-bar-outer"><div id="progress-bar" class="progress-bar-inner" style="width:0%"></div></div>
+    <div id="progress-detail" class="progress-detail" style="margin-top:6px">…</div>
+  </div>
+</div>
+
+<div id="list-panel" class="config-panel" style="margin-top:16px;display:none">
+  <h3 style="margin:0 0 10px;font-size:15px">缺失清单 <span id="list-count" style="font-weight:normal;color:var(--px-muted);font-size:12px"></span></h3>
+  <div style="overflow:auto;max-height:480px">
+    <table style="width:100%;border-collapse:collapse;font-size:12px" id="missing-table">
+      <thead>
+        <tr style="text-align:left;color:var(--px-muted);border-bottom:1px solid var(--px-border)">
+          <th style="padding:6px 8px">类型</th>
+          <th style="padding:6px 8px">会话</th>
+          <th style="padding:6px 8px">时间</th>
+          <th style="padding:6px 8px">标识</th>
+          <th style="padding:6px 8px">状态</th>
+        </tr>
+      </thead>
+      <tbody id="missing-body"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/sse_progress.js') }}"></script>
+<script>
+(function () {
+  const esc = (s) => {
+    const d = document.createElement('div');
+    d.textContent = s == null ? '' : String(s);
+    return d.innerHTML;
+  };
+  const fmtTime = (ts) => {
+    if (!ts) return '—';
+    try { return new Date(Number(ts) * 1000).toLocaleString('zh-CN'); }
+    catch (e) { return String(ts); }
+  };
+
+  let lastScan = null;
+
+  function selectedTypes() {
+    return Array.from(document.querySelectorAll('.type-cb:checked')).map(c => parseInt(c.value, 10));
+  }
+
+  function bodyBase() {
+    const o = {
+      types: selectedTypes(),
+    };
+    const out = document.getElementById('cfg-output').value.trim();
+    const db = document.getElementById('cfg-db-dir').value.trim();
+    const from = document.getElementById('cfg-date-from').value;
+    const to = document.getElementById('cfg-date-to').value;
+    if (out) o.output_dir = out;
+    if (db) o.db_dir = db;
+    if (from) o.start_date = from;
+    if (to) o.end_date = to;
+    return o;
+  }
+
+  function renderSummary(s) {
+    const by = s.by_type || {};
+    let html = '';
+    html += '<dt>引用合计</dt><dd>' + esc(s.total) + '</dd>';
+    html += '<dt>已落盘</dt><dd>' + esc(s.present) + '</dd>';
+    html += '<dt>缺失</dt><dd><b>' + esc(s.missing) + '</b>（可恢复 '
+      + esc(s.recoverable) + ' · 已丢失 ' + esc(s.gone) + '）</dd>';
+    const labels = {3:'图片',43:'视频',34:'语音',6:'文件',47:'表情',49:'附件'};
+    for (const [t, b] of Object.entries(by)) {
+      if (!b || !b.total) continue;
+      html += '<dt>' + esc(labels[t] || t) + '</dt><dd>共 ' + esc(b.total)
+        + ' · 缺 ' + esc(b.missing)
+        + '（可恢复 ' + esc(b.recoverable) + '）</dd>';
+    }
+    document.getElementById('summary-stats').innerHTML = html;
+    document.getElementById('summary-panel').style.display = 'block';
+    const btn = document.getElementById('btn-remigrate');
+    btn.disabled = !(s.recoverable > 0);
+  }
+
+  function renderList(items, truncated) {
+    const body = document.getElementById('missing-body');
+    document.getElementById('list-panel').style.display = 'block';
+    document.getElementById('list-count').textContent = truncated
+      ? '（仅显示前 ' + items.length + ' 条）'
+      : '（' + items.length + ' 条）';
+    if (!items.length) {
+      body.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--px-muted)">没有缺失项 🎉</td></tr>';
+      return;
+    }
+    let html = '';
+    for (const m of items) {
+      const st = m.recoverable
+        ? '<span style="color:var(--px-gold)">可恢复</span>'
+        : '<span style="color:#ff5a6e">已丢失</span>';
+      const id = m.kind === 'voice'
+        ? (m.create_time + '_' + m.local_id)
+        : (m.md5 || '').slice(0, 12);
+      html += '<tr style="border-bottom:1px solid var(--px-border)">';
+      html += '<td style="padding:6px 8px">' + esc(m.type_label) + '</td>';
+      html += '<td style="padding:6px 8px">' + esc(m.display_name || m.chat_id) + '</td>';
+      html += '<td style="padding:6px 8px;white-space:nowrap">' + esc(fmtTime(m.create_time)) + '</td>';
+      html += '<td style="padding:6px 8px;font-family:monospace">' + esc(id) + '</td>';
+      html += '<td style="padding:6px 8px">' + st + '</td>';
+      html += '</tr>';
+    }
+    body.innerHTML = html;
+  }
+
+  async function scan() {
+    const btn = document.getElementById('btn-scan');
+    btn.disabled = true;
+    btn.textContent = '体检中…';
+    try {
+      const res = await fetch('/api/media/integrity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyBase()),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '体检失败');
+      lastScan = data;
+      if (data.output_dir && !document.getElementById('cfg-output').value.trim()) {
+        document.getElementById('cfg-output').value = data.output_dir;
+      }
+      if (data.db_dir && !document.getElementById('cfg-db-dir').value.trim()) {
+        document.getElementById('cfg-db-dir').value = data.db_dir;
+      }
+      renderSummary(data.summary || {});
+      renderList(data.missing || [], !!data.missing_truncated);
+    } catch (e) {
+      alert('体检失败: ' + (e.message || e));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '开始体检';
+    }
+  }
+
+  function remigrate() {
+    if (!lastScan || !(lastScan.summary && lastScan.summary.recoverable > 0)) {
+      alert('没有可恢复的缺失项');
+      return;
+    }
+    if (!confirm('将从微信源目录 / 上一版备份补迁可恢复的缺失媒体到当前备份。继续？')) return;
+
+    const wrap = document.getElementById('progress-wrap');
+    const bar = document.getElementById('progress-bar');
+    const detail = document.getElementById('progress-detail');
+    wrap.style.display = 'block';
+    document.getElementById('btn-remigrate').disabled = true;
+    document.getElementById('btn-scan').disabled = true;
+
+    const sse = new SseProgress('/api/media/integrity/remigrate', {
+      method: 'POST',
+      body: bodyBase(),
+      onProgress: (data) => {
+        const p = Math.round((data.progress || 0) * 100);
+        bar.style.width = p + '%';
+        detail.textContent = (data.detail || data.stage || '') + ' ' + p + '%';
+      },
+      onDone: (data) => {
+        const r = data.result || data;
+        bar.style.width = '100%';
+        const mig = r.migrate || {};
+        const voice = r.voice || {};
+        detail.textContent = '完成：文件硬链 '
+          + (mig.hardlinked || 0) + ' / 复用 ' + (mig.link_reused || 0)
+          + ' / 复制 ' + (mig.copied || 0)
+          + '；语音提取 ' + (voice.extracted || 0)
+          + '；仍缺 ' + (r.remaining_missing ?? '—');
+        document.getElementById('btn-scan').disabled = false;
+        scan();
+      },
+      onError: (err) => {
+        detail.textContent = '失败: ' + (err.message || err);
+        document.getElementById('btn-scan').disabled = false;
+        document.getElementById('btn-remigrate').disabled = false;
+      },
+    });
+    sse.start();
+  }
+
+  document.getElementById('btn-scan').addEventListener('click', scan);
+  document.getElementById('btn-remigrate').addEventListener('click', remigrate);
+
+  // Prefill current dirs if API knows them
+  fetch('/api/media/integrity', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    .then(r => r.json())
+    .then(data => {
+      if (data.output_dir) document.getElementById('cfg-output').value = data.output_dir;
+      if (data.db_dir) document.getElementById('cfg-db-dir').value = data.db_dir;
+      if (data.ok) {
+        lastScan = data;
+        renderSummary(data.summary || {});
+        renderList(data.missing || [], !!data.missing_truncated);
+      }
+    })
+    .catch(() => {});
+})();
+</script>
+{% endblock %}

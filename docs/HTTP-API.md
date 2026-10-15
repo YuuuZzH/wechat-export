@@ -94,6 +94,8 @@ Host: 127.0.0.1:5000
 | GET | `/api/backup/versions` | 列出备份版本（`base_dir` / `wxid` / `limit` 可选） |
 | GET/POST | `/api/backup/versions/diff` | 对比两版：`old` + `new` 路径 → 新增/消失会话与消息增量 |
 | POST | `/api/backup/versions/activate` | 将工作集切换到指定备份（回滚），body: `{ "path": "..." }` |
+| GET/POST | `/api/media/integrity` | 媒体完整性体检：缺失图片/视频/语音清单（可恢复 / 已丢失） |
+| POST | `/api/media/integrity/remigrate` | 一键补迁可恢复项（SSE） |
 | GET/POST | `/api/keys/*` | 密钥目录 / 校验 / 保存 |
 
 ---

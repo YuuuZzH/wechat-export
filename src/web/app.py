@@ -248,6 +248,12 @@ def create_app(decrypted_dir: str, wxid: str = None, db_dir: str = None) -> Flas
 
     _register_blueprint(app, 'routes.cleanup_api', _register_cleanup_bp)
 
+    def _register_media_integrity_bp():
+        from .routes.media_integrity_api import media_integrity_bp
+        app.register_blueprint(media_integrity_bp)
+
+    _register_blueprint(app, 'routes.media_integrity_api', _register_media_integrity_bp)
+
     # Manual key entry API (paste keys by hand)
     def _register_keys_bp():
         from .routes.keys_api import keys_bp
@@ -368,6 +374,10 @@ def create_app(decrypted_dir: str, wxid: str = None, db_dir: str = None) -> Flas
     @app.route('/cleanup')
     def cleanup_page():
         return render_template('cleanup.html')
+
+    @app.route('/media-integrity')
+    def media_integrity_page():
+        return render_template('media_integrity.html')
 
     @app.route('/wrapped')
     def wrapped_page():
